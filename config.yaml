@@ -37,19 +37,6 @@ strategies:
 
   
 
-  # ── 全市場掃描 ──
-  # 寬鬆條件，看看整體市場狀況
-  # 全市場掃描:
-  #   description: "寬鬆條件，概覽全市場"
-  #   filters:
-  #     溢折價:
-  #       max: 0.15
-  #     債券市價:
-  #       max: 115
-  #   sort:
-  #     by: "溢折價"
-  #     ascending: true
-
 # --- 輸出 ---
 output:
   max_results: 15          # 每個策略最多顯示幾檔
