@@ -196,10 +196,51 @@ def load_prefetch(output_dir: str) -> dict:
     return prefetch.get("data", {})
 
 
+def load_volume_history(output_dir: str, days: int = 5) -> dict:
+    """
+    讀取近 N 天的歷史成交量，回傳每檔 CB 的平均成交量
+    回傳 {代號: 平均成交量}
+    """
+    history_dir = os.path.join(output_dir, "cb_history")
+    if not os.path.exists(history_dir):
+        return {}
+
+    # 找所有歷史檔案，按日期排序取最近 N 天
+    files = sorted(glob.glob(os.path.join(history_dir, "*.json")), reverse=True)
+    files = files[:days]
+
+    if not files:
+        return {}
+
+    print(f"[歷史] 讀取近 {len(files)} 天成交量資料")
+
+    # 累積每檔 CB 的成交量
+    vol_records = {}  # {代號: [vol_day1, vol_day2, ...]}
+    for fpath in files:
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            for code, info in data.get("data", {}).items():
+                vol = info.get("volume", 0)
+                if code not in vol_records:
+                    vol_records[code] = []
+                vol_records[code].append(vol)
+        except (json.JSONDecodeError, KeyError):
+            continue
+
+    # 算平均
+    avg_volumes = {}
+    for code, vols in vol_records.items():
+        avg_volumes[code] = round(sum(vols) / len(vols))
+
+    print(f"[歷史] 計算 {len(avg_volumes)} 檔 CB 的 {len(files)} 日平均成交量")
+    return avg_volumes
+
+
 def fetch_all_live_prices(df: pd.DataFrame, prefetch_dir: str = "") -> tuple:
     """
     抓取標的股票（盤後 API）+ 可轉債（優先用 prefetch 盤中資料）
-    回傳 (stock_prices, cb_prices, cb_volumes)
+    回傳 (stock_prices, cb_prices, cb_volumes, avg_volumes)
     """
     # 1) 標的股票（盤後 API 有值）
     stock_codes = df["股票代號"].unique().tolist()
@@ -226,7 +267,12 @@ def fetch_all_live_prices(df: pd.DataFrame, prefetch_dir: str = "") -> tuple:
         cb_codes = df["代號"].astype(str).unique().tolist()
         cb_prices = _fetch_prices_from_twse(cb_codes, "可轉債")
 
-    return stock_prices, cb_prices, cb_volumes
+    # 3) 歷史平均成交量
+    avg_volumes = {}
+    if prefetch_dir:
+        avg_volumes = load_volume_history(prefetch_dir, days=5)
+
+    return stock_prices, cb_prices, cb_volumes, avg_volumes
 
 
 # ═══════════════════════════════════════════
@@ -234,12 +280,14 @@ def fetch_all_live_prices(df: pd.DataFrame, prefetch_dir: str = "") -> tuple:
 # ═══════════════════════════════════════════
 def recalculate_with_live_prices(
     df: pd.DataFrame, stock_prices: dict, cb_prices: dict,
-    cb_volumes: dict = None
+    cb_volumes: dict = None, avg_volumes: dict = None
 ) -> pd.DataFrame:
     """用即時股價和即時債券價重新計算"""
     df = df.copy()
     if cb_volumes is None:
         cb_volumes = {}
+    if avg_volumes is None:
+        avg_volumes = {}
 
     # 標的股價
     df["標的股價_即時"] = df["股票代號"].map(stock_prices)
@@ -255,21 +303,24 @@ def recalculate_with_live_prices(
     df.loc[mask, "債券市價"] = df.loc[mask, "債券市價_即時"]
     df["債券價來源"] = mask.map({True: "即時", False: "清單"})
 
-    # 可轉債成交量（來自 prefetch）
+    # 可轉債成交量（當日）
     if cb_volumes:
         df["CB成交量"] = df["代號"].astype(str).map(cb_volumes).fillna(0).astype(int)
     else:
-        # 沒有 prefetch 就用清單裡的成交張數
         df["CB成交量"] = df["成交張數"].fillna(0).astype(int)
+
+    # 可轉債近 N 日平均成交量
+    if avg_volumes:
+        df["CB均量"] = df["代號"].astype(str).map(avg_volumes).fillna(0).astype(int)
+    else:
+        df["CB均量"] = df["CB成交量"]  # 沒有歷史就用當日
 
     # 重新計算
     df["轉換價值"] = (100 / df["轉換價格"]) * df["標的股價"]
     df["溢折價"] = (df["債券市價"] - df["轉換價值"]) / df["轉換價值"]
 
     # 額外衍生欄位
-    # 溢價率 = ((CB市價 / 轉換價值) - 1)，跟溢折價一樣但這裡明確定義
     df["溢價率"] = (df["債券市價"] / df["轉換價值"]) - 1
-    # 股價對轉換價格的比率 = (標的股價 / 轉換價格) - 1
     df["股價轉換價比"] = (df["標的股價"] / df["轉換價格"]) - 1
 
     stock_live = (df["股價來源"] == "即時").sum()
@@ -395,6 +446,7 @@ def format_telegram_message(
         bond_price = row.get("債券市價", 0)
         premium_rate = row.get("溢價率", 0)
         cb_vol = row.get("CB成交量", 0)
+        cb_avg = row.get("CB均量", 0)
         days_left = row.get("到期剩餘天數", 0)
         cv = row.get("轉換價值", 0)
         stock_price = row.get("標的股價", 0)
@@ -411,7 +463,7 @@ def format_telegram_message(
         lines.append(f"{emoji} *{code} {name}* {shield}")
         lines.append(f"  {b_mark}CB {bond_price:.2f} ｜溢價率 {premium_rate:+.1%}")
         lines.append(f"  {s_mark}股價 {stock_price:.2f} ｜轉換價 {conv_price:.2f}")
-        lines.append(f"  轉換價值 {cv:.2f} ｜CB成交 {int(cb_vol)} 張")
+        lines.append(f"  轉換價值 {cv:.2f} ｜成交 {int(cb_vol)} 張 ｜均量 {int(cb_avg)}")
         lines.append("")
 
     if len(df) > max_results:
@@ -486,8 +538,8 @@ def main():
     # 抓即時報價（股票 + 可轉債）
     if not args.no_live:
         prefetch_dir = output_config.get("csv_folder", "./output")
-        stock_prices, cb_prices, cb_volumes = fetch_all_live_prices(df, prefetch_dir)
-        df = recalculate_with_live_prices(df, stock_prices, cb_prices, cb_volumes)
+        stock_prices, cb_prices, cb_volumes, avg_volumes = fetch_all_live_prices(df, prefetch_dir)
+        df = recalculate_with_live_prices(df, stock_prices, cb_prices, cb_volumes, avg_volumes)
     else:
         print("[報價] 跳過即時報價（使用清單價格）")
         df["標的股價"] = df["標的股價_xls"]
@@ -496,6 +548,7 @@ def main():
         df["股價來源"] = "清單"
         df["債券價來源"] = "清單"
         df["CB成交量"] = df["成交張數"].fillna(0).astype(int)
+        df["CB均量"] = df["CB成交量"]
         df["溢價率"] = (df["債券市價"] / df["轉換價值"]) - 1
         df["股價轉換價比"] = (df["標的股價"] / df["轉換價格"]) - 1
 

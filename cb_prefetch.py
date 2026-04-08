@@ -195,6 +195,15 @@ def main():
 
     print(f"[完成] 已存至 {outpath}")
 
+    # 同時存一份歷史紀錄（用來計算近 N 日平均成交量）
+    history_dir = os.path.join(output_dir, "cb_history")
+    os.makedirs(history_dir, exist_ok=True)
+    date_str = now.strftime("%Y%m%d")
+    hist_path = os.path.join(history_dir, f"{date_str}.json")
+    with open(hist_path, "w", encoding="utf-8") as f:
+        json.dump(output, f, ensure_ascii=False, indent=2)
+    print(f"[歷史] 已存至 {hist_path}")
+
 
 if __name__ == "__main__":
     main()

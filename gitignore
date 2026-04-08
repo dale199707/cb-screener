@@ -1,0 +1,11 @@
+# 輸出檔案（每次跑都會重新產生）
+output/
+# 但保留歷史成交量紀錄
+!output/cb_history/
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc

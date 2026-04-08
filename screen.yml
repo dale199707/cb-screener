@@ -1,0 +1,86 @@
+name: CB Screener
+
+on:
+  schedule:
+    # UTC 05:25 = 台灣時間 13:25（盤中抓 CB 報價）
+    - cron: '25 5 * * 1-5'
+    # UTC 06:30 = 台灣時間 14:30（盤後跑篩選）
+    - cron: '30 6 * * 1-5'
+  workflow_dispatch:  # 允許手動觸發
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Inject Telegram secrets into config
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python3 -c "
+          import yaml
+          with open('config.yaml') as f:
+              c = yaml.safe_load(f)
+          import os
+          c['telegram']['bot_token'] = os.environ['TELEGRAM_BOT_TOKEN']
+          c['telegram']['chat_id'] = os.environ['TELEGRAM_CHAT_ID']
+          with open('config.yaml', 'w') as f:
+              yaml.dump(c, f, allow_unicode=True)
+          "
+
+      - name: Determine task (prefetch or screener)
+        id: task
+        run: |
+          # 取得台灣時間的小時
+          TW_HOUR=$(TZ=Asia/Taipei date +%H)
+          echo "tw_hour=$TW_HOUR" >> $GITHUB_OUTPUT
+          if [ "$TW_HOUR" -lt 14 ]; then
+            echo "task=prefetch" >> $GITHUB_OUTPUT
+          else
+            echo "task=screener" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run prefetch (13:25)
+        if: steps.task.outputs.task == 'prefetch'
+        run: python3 cb_prefetch.py
+
+      - name: Run screener (14:30)
+        if: steps.task.outputs.task == 'screener'
+        run: python3 cb_screener.py
+
+      # 把 prefetch 結果存起來，讓 14:30 的 job 能用
+      - name: Save prefetch data
+        if: steps.task.outputs.task == 'prefetch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: prefetch-data
+          path: output/cb_prefetch.json
+          retention-days: 1
+
+      # prefetch 後把歷史成交量 commit 回 repo
+      - name: Commit history data
+        if: steps.task.outputs.task == 'prefetch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add output/cb_history/ -f
+          git diff --cached --quiet || git commit -m "自動更新 CB 歷史成交量 $(TZ=Asia/Taipei date +%Y%m%d)"
+          git push || echo "Nothing to push"
+
+      # 14:30 的 job 下載 prefetch 資料
+      - name: Download prefetch data
+        if: steps.task.outputs.task == 'screener'
+        uses: actions/download-artifact@v4
+        with:
+          name: prefetch-data
+          path: output/
+        continue-on-error: true  # 沒有 prefetch 也不要報錯
