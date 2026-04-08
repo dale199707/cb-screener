@@ -266,6 +266,12 @@ def recalculate_with_live_prices(
     df["轉換價值"] = (100 / df["轉換價格"]) * df["標的股價"]
     df["溢折價"] = (df["債券市價"] - df["轉換價值"]) / df["轉換價值"]
 
+    # 額外衍生欄位
+    # 溢價率 = ((CB市價 / 轉換價值) - 1)，跟溢折價一樣但這裡明確定義
+    df["溢價率"] = (df["債券市價"] / df["轉換價值"]) - 1
+    # 股價對轉換價格的比率 = (標的股價 / 轉換價格) - 1
+    df["股價轉換價比"] = (df["標的股價"] / df["轉換價格"]) - 1
+
     stock_live = (df["股價來源"] == "即時").sum()
     cb_live = (df["債券價來源"] == "即時").sum()
     print(f"[計算] 股價即時 {stock_live} 檔 ｜ 債券價即時 {cb_live} 檔")
@@ -274,28 +280,89 @@ def recalculate_with_live_prices(
 
 
 # ═══════════════════════════════════════════
-#  5. 篩選策略
+#  5. 篩選策略（支援 filters + custom_filter）
 # ═══════════════════════════════════════════
-def apply_strategy(df: pd.DataFrame, strategy: dict) -> pd.DataFrame:
+
+# --- 自訂策略函式 ---
+CUSTOM_FILTERS = {}
+
+
+def register_filter(name):
+    """裝飾器：註冊自訂篩選函式"""
+    def decorator(func):
+        CUSTOM_FILTERS[name] = func
+        return func
+    return decorator
+
+
+@register_filter("可轉債資優生")
+def filter_cb_honor(df):
+    """
+    CB市價 103~160
+    且（股價在轉換價 -20%~+30% 或 CB市價 > 轉換價值）
+    """
+    # 基本條件：CB市價 103~160
+    mask_price = (df["債券市價"] > 103) & (df["債券市價"] < 160)
+
+    # OR 條件 1：股價在轉換價格的 -20% ~ +30%
+    mask_stock = (df["股價轉換價比"] >= -0.20) & (df["股價轉換價比"] <= 0.30)
+
+    # OR 條件 2：CB市價 > 轉換價值
+    mask_cv = df["債券市價"] > df["轉換價值"]
+
+    result = df[mask_price & (mask_stock | mask_cv)]
+    return result
+
+
+@register_filter("突破轉換價")
+def filter_breakthrough(df):
+    """
+    CB收盤價 > 轉換價值 且溢價率 < 5%
+    股價 > 轉換價格 0%~10%
+    CB日成交量 > 200 張
+    """
+    # 條件 1：CB > 轉換價值，且溢價率 < 5%
+    mask_premium = (df["債券市價"] > df["轉換價值"]) & (df["溢價率"] < 0.05)
+
+    # 條件 2：股價高於轉換價格 0%~10%
+    mask_stock = (df["股價轉換價比"] > 0) & (df["股價轉換價比"] < 0.10)
+
+    # 條件 3：CB 成交量 > 200
+    mask_vol = df["CB成交量"] > 200
+
+    result = df[mask_premium & mask_stock & mask_vol]
+    return result
+
+
+def apply_strategy(df: pd.DataFrame, strategy: dict, strategy_name: str = "") -> pd.DataFrame:
     result = df.copy()
-    filters = strategy.get("filters", {})
-    applied = []
 
-    for col_name, conditions in filters.items():
-        if col_name not in result.columns:
-            print(f"  [警告] 欄位 '{col_name}' 不存在，跳過")
-            continue
+    # 如果有對應的自訂篩選函式，優先使用
+    if strategy_name in CUSTOM_FILTERS:
         before = len(result)
-        if "min" in conditions and conditions["min"] is not None:
-            result = result[result[col_name] >= conditions["min"]]
-        if "max" in conditions and conditions["max"] is not None:
-            result = result[result[col_name] <= conditions["max"]]
+        result = CUSTOM_FILTERS[strategy_name](result)
         after = len(result)
-        applied.append(f"    {col_name}: {before} → {after}")
+        print(f"    自訂篩選: {before} → {after}")
+    else:
+        # 標準 min/max 篩選
+        filters = strategy.get("filters", {})
+        applied = []
 
-    if applied:
-        for a in applied:
-            print(a)
+        for col_name, conditions in filters.items():
+            if col_name not in result.columns:
+                print(f"  [警告] 欄位 '{col_name}' 不存在，跳過")
+                continue
+            before = len(result)
+            if "min" in conditions and conditions["min"] is not None:
+                result = result[result[col_name] >= conditions["min"]]
+            if "max" in conditions and conditions["max"] is not None:
+                result = result[result[col_name] <= conditions["max"]]
+            after = len(result)
+            applied.append(f"    {col_name}: {before} → {after}")
+
+        if applied:
+            for a in applied:
+                print(a)
 
     sort_config = strategy.get("sort", {"by": "溢折價", "ascending": True})
     col = sort_config.get("by", "溢折價")
@@ -326,24 +393,25 @@ def format_telegram_message(
         code = str(row.get("代號", ""))
         name = str(row.get("債券名稱", ""))
         bond_price = row.get("債券市價", 0)
-        premium = row.get("溢折價", 0)
+        premium_rate = row.get("溢價率", 0)
         cb_vol = row.get("CB成交量", 0)
         days_left = row.get("到期剩餘天數", 0)
         cv = row.get("轉換價值", 0)
         stock_price = row.get("標的股價", 0)
+        conv_price = row.get("轉換價格", 0)
         stock_src = row.get("股價來源", "清單")
         bond_src = row.get("債券價來源", "清單")
         guaranteed = row.get("有擔保", "")
 
-        emoji = "🟢" if premium < 0 else ("🟡" if premium < 0.05 else "🔴")
+        emoji = "🟢" if premium_rate < 0 else ("🟡" if premium_rate < 0.05 else "🔴")
         s_mark = "⚡" if stock_src == "即時" else "📋"
         b_mark = "⚡" if bond_src == "即時" else "📋"
         shield = "🛡" if guaranteed == "有" else ""
 
         lines.append(f"{emoji} *{code} {name}* {shield}")
-        lines.append(f"  {b_mark}市價 {bond_price:.2f} ｜溢折價 {premium:+.1%}")
-        lines.append(f"  {s_mark}股價 {stock_price:.2f} → 轉換價值 {cv:.2f}")
-        lines.append(f"  CB成交 {int(cb_vol)} 張 ｜到期 {int(days_left)} 天")
+        lines.append(f"  {b_mark}CB {bond_price:.2f} ｜溢價率 {premium_rate:+.1%}")
+        lines.append(f"  {s_mark}股價 {stock_price:.2f} ｜轉換價 {conv_price:.2f}")
+        lines.append(f"  轉換價值 {cv:.2f} ｜CB成交 {int(cb_vol)} 張")
         lines.append("")
 
     if len(df) > max_results:
@@ -428,6 +496,8 @@ def main():
         df["股價來源"] = "清單"
         df["債券價來源"] = "清單"
         df["CB成交量"] = df["成交張數"].fillna(0).astype(int)
+        df["溢價率"] = (df["債券市價"] / df["轉換價值"]) - 1
+        df["股價轉換價比"] = (df["標的股價"] / df["轉換價格"]) - 1
 
     # 策略
     strategies = config.get("strategies", {})
@@ -460,7 +530,7 @@ def main():
         if desc:
             print(f"   {desc}")
 
-        df_filtered = apply_strategy(df, strategy)
+        df_filtered = apply_strategy(df, strategy, strategy_name=name)
 
         if df_filtered.empty:
             print(f"  [結果] 沒有符合條件的可轉債")

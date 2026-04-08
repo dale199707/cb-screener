@@ -5,8 +5,8 @@
 
 # --- Telegram Bot ---
 telegram:
-  bot_token: "8274282740:AAE_gA1dEZ7c7TiXPtn9KiyLMgs_wLC_FDw"
-  chat_id: "1375749160"
+  bot_token: "GITHUB_WILL_INJECT"
+  chat_id: "GITHUB_WILL_INJECT"
 
 # --- 資料來源 ---
 data:
@@ -14,28 +14,41 @@ data:
   file_prefix: "CB list "           # 檔名前綴（注意空格）
 
 # --- 篩選策略 ---
-# 可以定義多組策略，每組獨立篩選、獨立推播
-# 可用欄位：溢折價、債券市價、賣回收益率、CB成交量、
-#          流通張數、到期剩餘天數、賣回剩餘天數、轉換價值
+# 自訂策略（有 OR 條件的）寫在 cb_screener.py 的 CUSTOM_FILTERS
+# 簡單 min/max 篩選的寫在這裡的 filters
 strategies:
 
-
-  # ── 積極型：找套利機會 ──
-  # 重點：折價可轉債 + CB有流動性
+  # ── 積極型：折價套利 ──
   積極型:
     description: "折價 CB，有套利空間"
     filters:
       溢折價:
-        max: 0.0            # 只要折價的（溢折價 < 0）
+        max: 0.0
       CB成交量:
-        min: 1              # CB 要有成交
+        min: 1
       流通張數:
-        min: 500            # 流通量不能太小
+        min: 500
     sort:
       by: "溢折價"
       ascending: true
 
-  
+  # ── 可轉債資優生 ──
+  # 邏輯寫在程式碼（有 OR 條件）
+  # CB市價 103~160 且（股價在轉換價 -20%~+30% 或 CB市價>轉換價值）
+  可轉債資優生:
+    description: "CB 103~160 且股價接近轉換價或已超過"
+    sort:
+      by: "溢價率"
+      ascending: true
+
+  # ── 突破轉換價 ──
+  # 邏輯寫在程式碼
+  # CB>轉換價值(溢價<5%) + 股價>轉換價(0~10%) + CB成交>200張
+  突破轉換價:
+    description: "股價剛突破轉換價，CB有量"
+    sort:
+      by: "溢價率"
+      ascending: true
 
 # --- 輸出 ---
 output:
