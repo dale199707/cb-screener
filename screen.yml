@@ -2,11 +2,10 @@ name: CB Screener
 
 on:
   schedule:
-    # UTC 05:25 = 台灣時間 13:25（盤中抓 CB 報價）
+    # UTC 05:25 = 台灣時間 13:25（盤中）
+    # 一次觸發，先 prefetch 再等到 14:30 跑 screener
     - cron: '25 5 * * 1-5'
-    # UTC 06:30 = 台灣時間 14:30（盤後跑篩選）
-    - cron: '30 6 * * 1-5'
-  workflow_dispatch:  # 允許手動觸發
+  workflow_dispatch:  # 手動觸發（會直接跑 prefetch + screener）
 
 jobs:
   run:
@@ -21,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Inject Telegram secrets into config
+      - name: Inject Telegram secrets
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -37,50 +36,41 @@ jobs:
               yaml.dump(c, f, allow_unicode=True)
           "
 
-      - name: Determine task (prefetch or screener)
-        id: task
-        run: |
-          # 取得台灣時間的小時
-          TW_HOUR=$(TZ=Asia/Taipei date +%H)
-          echo "tw_hour=$TW_HOUR" >> $GITHUB_OUTPUT
-          if [ "$TW_HOUR" -lt 14 ]; then
-            echo "task=prefetch" >> $GITHUB_OUTPUT
-          else
-            echo "task=screener" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Run prefetch (13:25)
-        if: steps.task.outputs.task == 'prefetch'
+      # Step 1: 盤中抓可轉債報價（13:25）
+      - name: Run prefetch (盤中抓 CB 報價)
         run: python3 cb_prefetch.py
 
-      - name: Run screener (14:30)
-        if: steps.task.outputs.task == 'screener'
-        run: python3 cb_screener.py
-
-      # 把 prefetch 結果存起來，讓 14:30 的 job 能用
-      - name: Save prefetch data
-        if: steps.task.outputs.task == 'prefetch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: prefetch-data
-          path: output/cb_prefetch.json
-          retention-days: 1
-
-      # prefetch 後把歷史成交量 commit 回 repo
+      # Step 2: 把歷史成交量 commit 回 repo
       - name: Commit history data
-        if: steps.task.outputs.task == 'prefetch'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add output/cb_history/ -f
-          git diff --cached --quiet || git commit -m "自動更新 CB 歷史成交量 $(TZ=Asia/Taipei date +%Y%m%d)"
+          git diff --cached --quiet || git commit -m "CB歷史成交量 $(TZ=Asia/Taipei date +%Y%m%d)"
           git push || echo "Nothing to push"
 
-      # 14:30 的 job 下載 prefetch 資料
-      - name: Download prefetch data
-        if: steps.task.outputs.task == 'screener'
-        uses: actions/download-artifact@v4
-        with:
-          name: prefetch-data
-          path: output/
-        continue-on-error: true  # 沒有 prefetch 也不要報錯
+      # Step 3: 等到 14:30（台灣時間）再跑 screener
+      - name: Wait until 14:30 TW time
+        run: |
+          TARGET_EPOCH=$(TZ=Asia/Taipei date -d "today 14:30" +%s 2>/dev/null || \
+                         python3 -c "
+          from datetime import datetime, timezone, timedelta
+          tw = timezone(timedelta(hours=8))
+          now = datetime.now(tw)
+          target = now.replace(hour=14, minute=30, second=0, microsecond=0)
+          if target <= now:
+              target = now  # 已過 14:30 就不等了
+          print(int(target.timestamp()))
+          ")
+          NOW_EPOCH=$(date +%s)
+          WAIT=$((TARGET_EPOCH - NOW_EPOCH))
+          if [ "$WAIT" -gt 0 ] && [ "$WAIT" -lt 7200 ]; then
+            echo "等待 ${WAIT} 秒（到台灣時間 14:30）..."
+            sleep $WAIT
+          else
+            echo "已過 14:30 或等待時間異常（${WAIT}s），直接執行"
+          fi
+
+      # Step 4: 盤後跑篩選 + 推播
+      - name: Run screener (盤後篩選)
+        run: python3 cb_screener.py
