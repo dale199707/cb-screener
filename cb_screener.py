@@ -349,11 +349,12 @@ def register_filter(name):
 @register_filter("可轉債資優生")
 def filter_cb_honor(df):
     """
-    CB市價 103~160
+    CB市價 103~150
     且（股價在轉換價 -20%~+30% 或 CB市價 > 轉換價值）
+    CB 5日均量 > 10（有歷史資料時才篩）
     """
-    # 基本條件：CB市價 103~160
-    mask_price = (df["債券市價"] > 103) & (df["債券市價"] < 160)
+    # 基本條件：CB市價 103~150
+    mask_price = (df["債券市價"] > 103) & (df["債券市價"] < 150)
 
     # OR 條件 1：股價在轉換價格的 -20% ~ +30%
     mask_stock = (df["股價轉換價比"] >= -0.20) & (df["股價轉換價比"] <= 0.30)
@@ -362,6 +363,11 @@ def filter_cb_honor(df):
     mask_cv = df["債券市價"] > df["轉換價值"]
 
     result = df[mask_price & (mask_stock | mask_cv)]
+
+    # CB 5日均量 > 10（有累積歷史才篩，否則跳過）
+    if result["CB均量"].max() > 0:
+        result = result[result["CB均量"] > 10]
+
     return result
 
 
@@ -370,7 +376,8 @@ def filter_breakthrough(df):
     """
     CB收盤價 > 轉換價值 且溢價率 < 5%
     股價 > 轉換價格 0%~10%
-    CB日成交量 > 200 張
+    CB 5日均量 > 50
+    CB 日成交量 > 150 張
     """
     # 條件 1：CB > 轉換價值，且溢價率 < 5%
     mask_premium = (df["債券市價"] > df["轉換價值"]) & (df["溢價率"] < 0.05)
@@ -378,15 +385,25 @@ def filter_breakthrough(df):
     # 條件 2：股價高於轉換價格 0%~10%
     mask_stock = (df["股價轉換價比"] > 0) & (df["股價轉換價比"] < 0.10)
 
-    # 條件 3：CB 成交量 > 200
-    mask_vol = df["CB成交量"] > 200
+    # 條件 3：CB 日成交量 > 150
+    mask_vol = df["CB成交量"] > 150
 
-    result = df[mask_premium & mask_stock & mask_vol]
+    # 條件 4：CB 5日均量 > 50
+    mask_avg = df["CB均量"] > 50
+
+    result = df[mask_premium & mask_stock & mask_vol & mask_avg]
     return result
 
 
 def apply_strategy(df: pd.DataFrame, strategy: dict, strategy_name: str = "") -> pd.DataFrame:
     result = df.copy()
+
+    # 全域條件：排除當日 CB 成交量 < 10 的
+    before_global = len(result)
+    result = result[result["CB成交量"] >= 10]
+    after_global = len(result)
+    if before_global != after_global:
+        print(f"    CB成交量≥10: {before_global} → {after_global}")
 
     # 如果有對應的自訂篩選函式，優先使用
     if strategy_name in CUSTOM_FILTERS:
@@ -440,7 +457,7 @@ def format_telegram_message(
         lines.append(f"📋 清單: {xls_date}")
     lines.append("─" * 24)
 
-    for _, row in df.head(max_results).iterrows():
+    for _, row in df.iterrows():
         code = str(row.get("代號", ""))
         name = str(row.get("債券名稱", ""))
         bond_price = row.get("債券市價", 0)
@@ -466,8 +483,6 @@ def format_telegram_message(
         lines.append(f"  轉換價值 {cv:.2f} ｜成交 {int(cb_vol)} 張 ｜均量 {int(cb_avg)}")
         lines.append("")
 
-    if len(df) > max_results:
-        lines.append(f"⋯ 還有 {len(df) - max_results} 檔未顯示")
     lines.append("")
     lines.append("🟢折價 🟡微溢價 🔴溢價 ⚡即時報價 📋清單價 🛡擔保")
 
