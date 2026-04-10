@@ -1,6 +1,6 @@
 # ============================================
-#  可轉債篩選系統 v2 設定檔
-#  修改後存檔即可，下次執行自動生效
+#  可轉債篩選系統 v3 設定檔
+#  資料來源：統一證券 CBAS API（盤後自動更新）
 # ============================================
 
 # --- Telegram Bot ---
@@ -8,18 +8,12 @@ telegram:
   bot_token: "GITHUB_WILL_INJECT"
   chat_id: "GITHUB_WILL_INJECT"
 
-# --- 資料來源 ---
-data:
-  xls_folder: "./data"
-  file_prefix: "CB list "           # 檔名前綴（注意空格）
-
 # --- 篩選策略 ---
 # 自訂策略（有 OR 條件的）寫在 cb_screener.py 的 CUSTOM_FILTERS
 # 簡單 min/max 篩選的寫在這裡的 filters
 strategies:
 
   # ── 可轉債資優生 ──
-  # 邏輯寫在程式碼（有 OR 條件）
   # CB市價 103~150 且（股價在轉換價 -20%~+30% 或 CB市價>轉換價值）+ 5日均量>10
   可轉債資優生:
     description: "CB 103~150 且股價接近轉換價或已超過"
@@ -28,7 +22,6 @@ strategies:
       ascending: true
 
   # ── 突破轉換價 ──
-  # 邏輯寫在程式碼
   # CB>轉換價值(溢價<5%) + 股價突破轉換價0~10% + CB成交>150 + 均量>50
   突破轉換價:
     description: "股價剛突破轉換價，CB有量"
@@ -38,6 +31,5 @@ strategies:
 
 # --- 輸出 ---
 output:
-  max_results: 15          # 每個策略最多顯示幾檔
   save_csv: true
   csv_folder: "./output"
