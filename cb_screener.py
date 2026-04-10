@@ -159,14 +159,14 @@ def filter_cb_honor(df):
     """
     CB市價 103~150
     且（股價在轉換價 -20%~+30% 或 CB市價 > 轉換價值）
-    CB 5日均量 > 10
+    CB 5日均量 > 20
     """
     mask_price = (df["債券市價"] > 103) & (df["債券市價"] < 150)
     mask_stock = (df["股價轉換價比"] >= -0.20) & (df["股價轉換價比"] <= 0.30)
     mask_cv = df["債券市價"] > df["轉換價值"]
 
     result = df[mask_price & (mask_stock | mask_cv)]
-    result = result[result["CB均量"] > 10]
+    result = result[result["CB均量"] > 20]
     return result
 
 
@@ -243,19 +243,23 @@ def format_telegram_message(strategy_name, strategy_desc, df):
         bond_price = row.get("債券市價", 0)
         premium = row.get("溢價率", 0)
         cb_vol = row.get("CB成交量", 0)
-        cb_avg = row.get("CB均量", 0)
+        avg5 = row.get("CB均量5日", 0)
+        avg20 = row.get("CB均量20日", 0)
         cv = row.get("轉換價值", 0)
         stock_price = row.get("標的股價", 0)
         conv_price = row.get("轉換價格", 0)
         guaranteed = row.get("有擔保", "")
+        expiry = row.get("到期日", None)
 
         emoji = "🟢" if premium < 0 else ("🟡" if premium < 0.05 else "🔴")
         shield = "🛡" if guaranteed == "有" else ""
+        exp_str = expiry.strftime("%Y/%m/%d") if pd.notna(expiry) else "-"
 
         lines.append(f"{emoji} *{code} {name}* {shield}")
         lines.append(f"  CB {bond_price:.2f} ｜溢價率 {premium:+.1%}")
         lines.append(f"  股價 {stock_price:.2f} ｜轉換價 {conv_price:.2f}")
-        lines.append(f"  轉換價值 {cv:.2f} ｜成交 {int(cb_vol)} 張 ｜均量 {cb_avg:.0f}")
+        lines.append(f"  轉換價值 {cv:.2f} ｜到期 {exp_str}")
+        lines.append(f"  成交 {int(cb_vol)} 張 ｜5日均量 {avg5:.0f} ｜20日均量 {avg20:.0f}")
         lines.append("")
 
     lines.append("")
