@@ -2,9 +2,10 @@ name: CB Screener
 
 on:
   schedule:
-    - cron: '25 5 * * 1-5'
-    - cron: '30 6 * * 1-5'
-  workflow_dispatch:
+    # UTC 10:30 = 台灣時間 18:30（CBAS API 約 18:00 更新完）
+    # 週日～四跑，對應隔天交易日（週一～五）
+    - cron: '30 10 * * 0-4'
+  workflow_dispatch:  # 手動觸發
 
 jobs:
   run:
@@ -35,36 +36,5 @@ jobs:
               yaml.dump(c, f, allow_unicode=True)
           "
 
-      - name: Determine task
-        id: task
-        run: |
-          TW_HOUR=$(TZ=Asia/Taipei date +%H)
-          if [ "$TW_HOUR" -lt 14 ]; then
-            echo "task=prefetch" >> $GITHUB_OUTPUT
-          else
-            echo "task=screener" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Run prefetch
-        if: steps.task.outputs.task == 'prefetch'
-        run: python3 cb_prefetch.py
-
       - name: Run screener
-        if: steps.task.outputs.task == 'screener'
         run: python3 cb_screener.py
-
-      - name: Save prefetch
-        if: steps.task.outputs.task == 'prefetch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: prefetch-data
-          path: output/cb_prefetch.json
-          retention-days: 1
-
-      - name: Load prefetch
-        if: steps.task.outputs.task == 'screener'
-        uses: actions/download-artifact@v4
-        with:
-          name: prefetch-data
-          path: output/
-        continue-on-error: true
