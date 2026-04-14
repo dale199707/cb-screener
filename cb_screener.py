@@ -329,16 +329,59 @@ def apply_strategy(df, strategy, strategy_name=""):
 
 
 # ═══════════════════════════════════════════
-#  4. 格式化 Telegram 訊息
+#  4. 歷史紀錄（比對新增 CB）
 # ═══════════════════════════════════════════
-def format_telegram_message(strategy_name, strategy_desc, df):
+HISTORY_DIR = "history"
+
+
+def load_previous_results(strategy_name: str) -> set:
+    """讀取前一次篩選結果的 CB 代號"""
+    path = os.path.join(HISTORY_DIR, f"{strategy_name}.json")
+    if not os.path.exists(path):
+        return set()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return set(data.get("codes", []))
+    except (json.JSONDecodeError, KeyError):
+        return set()
+
+
+def save_current_results(strategy_name: str, codes: list):
+    """儲存本次篩選結果的 CB 代號"""
+    os.makedirs(HISTORY_DIR, exist_ok=True)
+    path = os.path.join(HISTORY_DIR, f"{strategy_name}.json")
+    data = {
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "count": len(codes),
+        "codes": codes,
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+# ═══════════════════════════════════════════
+#  5. 格式化 Telegram 訊息
+# ═══════════════════════════════════════════
+def format_telegram_message(strategy_name, strategy_desc, df, new_codes=None):
+    if new_codes is None:
+        new_codes = set()
     today_str = datetime.now().strftime("%Y/%m/%d")
     lines = []
     lines.append(f"📊 *{strategy_name}*")
     if strategy_desc:
         lines.append(f"_{strategy_desc}_")
-    lines.append(f"📅 {today_str}（篩出 {len(df)} 檔）")
+    new_count = sum(1 for _, r in df.iterrows() if str(r.get("代號", "")) in new_codes)
+    if new_count > 0:
+        lines.append(f"📅 {today_str}（篩出 {len(df)} 檔，🆕 {new_count} 檔新增）")
+    else:
+        lines.append(f"📅 {today_str}（篩出 {len(df)} 檔）")
     lines.append("─" * 24)
+
+    # 新增的排最上面
+    df = df.copy()
+    df["_is_new"] = df["代號"].astype(str).isin(new_codes)
+    df = df.sort_values("_is_new", ascending=False, kind="stable")
 
     for _, row in df.iterrows():
         code = str(row.get("代號", ""))
@@ -358,10 +401,11 @@ def format_telegram_message(strategy_name, strategy_desc, df):
 
         emoji = "🟢" if premium < 0 else ("🟡" if premium < 0.05 else "🔴")
         shield = "🛡" if guaranteed == "有" else ""
+        is_new = "🆕" if code in new_codes else ""
         exp_str = expiry.strftime("%Y/%m/%d") if pd.notna(expiry) else "-"
         ma_str = f"87MA {ma87:.1f} / 284MA {ma284:.1f}" if pd.notna(ma87) and pd.notna(ma284) else ""
 
-        lines.append(f"{emoji} *{code} {name}* {shield}")
+        lines.append(f"{emoji} *{code} {name}* {shield}{is_new}")
         lines.append(f"  CB {bond_price:.2f} ｜溢價率 {premium:+.1%}")
         lines.append(f"  股價 {stock_price:.2f} ｜轉換價 {conv_price:.2f}")
         lines.append(f"  轉換價值 {cv:.2f} ｜到期 {exp_str}")
@@ -371,7 +415,7 @@ def format_telegram_message(strategy_name, strategy_desc, df):
         lines.append("")
 
     lines.append("")
-    lines.append("🟢折價 🟡微溢價(<5%) 🔴溢價 🛡擔保 📈均線多頭")
+    lines.append("🟢折價 🟡微溢價(<5%) 🔴溢價 🛡擔保 📈均線多頭 🆕新增")
 
     return "\n".join(lines)
 
@@ -476,6 +520,16 @@ def main():
 
         df_filtered = apply_strategy(df, strategy, strategy_name=name)
 
+        # 比對前一日結果，找出新增的 CB
+        prev_codes = load_previous_results(name)
+        current_codes = df_filtered["代號"].astype(str).tolist() if not df_filtered.empty else []
+        new_codes = set(current_codes) - prev_codes
+
+        if new_codes and prev_codes:  # prev_codes 為空代表第一次跑，不標新增
+            print(f"  [新增] 🆕 {len(new_codes)} 檔: {', '.join(sorted(new_codes))}")
+        elif not prev_codes:
+            new_codes = set()  # 第一次跑，全部都不標新增
+
         if df_filtered.empty:
             print(f"  [結果] 沒有符合條件的可轉債")
             msg = (
@@ -485,7 +539,10 @@ def main():
             )
         else:
             print(f"  [結果] 篩選出 {len(df_filtered)} 檔")
-            msg = format_telegram_message(name, desc, df_filtered)
+            msg = format_telegram_message(name, desc, df_filtered, new_codes)
+
+        # 儲存本次結果
+        save_current_results(name, current_codes)
 
         print()
         print(msg)
