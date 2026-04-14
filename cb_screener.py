@@ -142,6 +142,102 @@ def fetch_cb_data() -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════
+#  2.5 用 yfinance 計算均線（87MA / 284MA）
+# ═══════════════════════════════════════════
+def fetch_ma_data(stock_codes: list) -> dict:
+    """
+    用 yfinance 逐檔抓歷史股價，計算 87MA 和 284MA
+    回傳 {股票代號: {ma87, ma87_prev, ma284, bullish, ma_rising}}
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        print("[警告] 未安裝 yfinance，跳過均線計算（pip install yfinance）")
+        return {}
+
+    print(f"[均線] 準備計算 {len(stock_codes)} 檔標的股票的 87MA / 284MA...")
+
+    result = {}
+    failed = []
+
+    for i, code in enumerate(stock_codes):
+        # 先試上市 (.TW)，沒資料再試上櫃 (.TWO)
+        df = pd.DataFrame()
+        for suffix in [".TW", ".TWO"]:
+            ticker = f"{code}{suffix}"
+            try:
+                temp = yf.Ticker(ticker).history(period="2y")
+                if not temp.empty and len(temp) >= 284:
+                    df = temp
+                    break
+            except Exception:
+                continue
+
+        if df.empty or len(df) < 284:
+            failed.append(code)
+            continue
+
+        # 確保照日期排序
+        df = df.sort_index()
+        close = df["Close"].dropna()
+
+        if len(close) < 284:
+            failed.append(code)
+            continue
+
+        _calc_ma(close, code, result)
+
+        # 每 20 檔印一次進度
+        if (i + 1) % 20 == 0:
+            print(f"[均線] 進度 {i+1}/{len(stock_codes)}...")
+
+    bullish_count = sum(1 for v in result.values() if v["bullish"])
+    print(f"[均線] 計算完成 {len(result)}/{len(stock_codes)} 檔")
+    if failed:
+        print(f"[均線] 無資料 {len(failed)} 檔: {', '.join(failed[:10])}{'...' if len(failed) > 10 else ''}")
+    print(f"[均線] 多頭排列 {bullish_count} 檔")
+
+    return result
+
+
+def _calc_ma(close: pd.Series, symbol: str, result: dict):
+    """計算單檔的 87MA / 284MA 並存入 result"""
+    ma87 = close.rolling(87).mean()
+    ma284 = close.rolling(284).mean()
+
+    ma87_today = ma87.iloc[-1]
+    ma87_yesterday = ma87.iloc[-2]
+    ma284_today = ma284.iloc[-1]
+
+    if pd.isna(ma87_today) or pd.isna(ma284_today):
+        return
+
+    result[symbol] = {
+        "ma87": round(ma87_today, 2),
+        "ma87_prev": round(ma87_yesterday, 2),
+        "ma284": round(ma284_today, 2),
+        "bullish": ma87_today > ma284_today,       # 多頭排列
+        "ma_rising": ma87_today > ma87_yesterday,   # 均線上揚
+    }
+
+
+def apply_ma_to_df(df: pd.DataFrame, ma_data: dict) -> pd.DataFrame:
+    """把均線資料合併到 CB DataFrame"""
+    df = df.copy()
+
+    df["MA87"] = df["股票代號"].map(lambda x: ma_data.get(x, {}).get("ma87"))
+    df["MA284"] = df["股票代號"].map(lambda x: ma_data.get(x, {}).get("ma284"))
+    df["多頭排列"] = df["股票代號"].map(
+        lambda x: ma_data.get(x, {}).get("bullish", True)  # 無資料時保留
+    )
+    df["均線上揚"] = df["股票代號"].map(
+        lambda x: ma_data.get(x, {}).get("ma_rising", True)  # 無資料時保留
+    )
+
+    return df
+
+
+# ═══════════════════════════════════════════
 #  3. 篩選策略
 # ═══════════════════════════════════════════
 CUSTOM_FILTERS = {}
@@ -190,12 +286,19 @@ def filter_breakthrough(df):
 def apply_strategy(df, strategy, strategy_name=""):
     result = df.copy()
 
-    # 全域條件：CB 當日成交量 ≥ 10
+    # 全域條件 1：CB 當日成交量 ≥ 10
     before_global = len(result)
     result = result[result["CB成交量"] >= 10]
     after_global = len(result)
     if before_global != after_global:
         print(f"    CB成交量≥10: {before_global} → {after_global}")
+
+    # 全域條件 2：均線多頭（87MA > 284MA）
+    before_ma = len(result)
+    result = result[result["多頭排列"]]
+    after_ma = len(result)
+    if before_ma != after_ma:
+        print(f"    均線多頭(87MA>284MA): {before_ma} → {after_ma}")
 
     if strategy_name in CUSTOM_FILTERS:
         before = len(result)
@@ -243,27 +346,32 @@ def format_telegram_message(strategy_name, strategy_desc, df):
         bond_price = row.get("債券市價", 0)
         premium = row.get("溢價率", 0)
         cb_vol = row.get("CB成交量", 0)
-        avg5 = row.get("CB均量5日", 0)
-        avg20 = row.get("CB均量20日", 0)
+        avg5 = row.get("CB均量5日", 0) or 0
+        avg20 = row.get("CB均量20日", 0) or 0
         cv = row.get("轉換價值", 0)
         stock_price = row.get("標的股價", 0)
         conv_price = row.get("轉換價格", 0)
         guaranteed = row.get("有擔保", "")
         expiry = row.get("到期日", None)
+        ma87 = row.get("MA87", None)
+        ma284 = row.get("MA284", None)
 
         emoji = "🟢" if premium < 0 else ("🟡" if premium < 0.05 else "🔴")
         shield = "🛡" if guaranteed == "有" else ""
         exp_str = expiry.strftime("%Y/%m/%d") if pd.notna(expiry) else "-"
+        ma_str = f"87MA {ma87:.1f} / 284MA {ma284:.1f}" if pd.notna(ma87) and pd.notna(ma284) else ""
 
         lines.append(f"{emoji} *{code} {name}* {shield}")
         lines.append(f"  CB {bond_price:.2f} ｜溢價率 {premium:+.1%}")
         lines.append(f"  股價 {stock_price:.2f} ｜轉換價 {conv_price:.2f}")
         lines.append(f"  轉換價值 {cv:.2f} ｜到期 {exp_str}")
-        lines.append(f"  成交 {int(cb_vol)} 張 ｜5日均量 {avg5:.0f} ｜20日均量 {avg20:.0f}")
+        lines.append(f"  成交 {int(cb_vol)} ｜5日均 {avg5:.0f} ｜20日均 {avg20:.0f}")
+        if ma_str:
+            lines.append(f"  📈 {ma_str}")
         lines.append("")
 
     lines.append("")
-    lines.append("🟢折價 🟡微溢價(<5%) 🔴溢價 🛡擔保")
+    lines.append("🟢折價 🟡微溢價(<5%) 🔴溢價 🛡擔保 📈均線多頭")
 
     return "\n".join(lines)
 
@@ -319,6 +427,21 @@ def main():
 
     # 從 CBAS API 取得所有可轉債資料
     df = fetch_cb_data()
+
+    # 先用 CB成交量 ≥ 10 預篩（減少需要抓均線的股票數量）
+    df_active = df[df["CB成交量"] >= 10].copy()
+    stock_codes = df_active["股票代號"].unique().tolist()
+    print(f"[均線] CB成交量≥10 的標的股票: {len(stock_codes)} 檔")
+
+    # 用 yfinance 計算均線
+    ma_data = fetch_ma_data(stock_codes)
+    if ma_data:
+        df = apply_ma_to_df(df, ma_data)
+    else:
+        df["MA87"] = None
+        df["MA284"] = None
+        df["多頭排列"] = True   # 沒有均線資料時不篩
+        df["均線上揚"] = True
 
     # 策略
     strategies = config.get("strategies", {})
