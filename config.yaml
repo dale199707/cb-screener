@@ -29,6 +29,16 @@ strategies:
       by: "溢價率"
       ascending: true
 
+  # ── 領先創高 ──
+  # CB 創 20 日新高 + 股票未創高 + CB 放量 1.3x + 5日均量>=20
+  # 需要累積 5 天以上 CB 歷史資料才會啟用
+  領先創高:
+    description: "CB 創新高但股票未創高，疑似主力領先"
+    min_history_days: 5
+    sort:
+      by: "CB放量倍數"
+      ascending: false
+
 # --- 輸出 ---
 output:
   save_csv: true

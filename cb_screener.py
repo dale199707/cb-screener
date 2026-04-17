@@ -16,7 +16,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -137,12 +137,12 @@ def fetch_cb_data() -> pd.DataFrame:
 
 
 # ═══════════════════════════════════════════
-#  2.5 用 yfinance 計算均線（87MA / 284MA）
+#  2.5 用 yfinance 計算均線（87MA / 284MA）+ 20日股價高點
 # ═══════════════════════════════════════════
 def fetch_ma_data(stock_codes: list) -> dict:
     """
-    用 yfinance 逐檔抓歷史股價，計算 87MA 和 284MA
-    回傳 {股票代號: {ma87, ma87_prev, ma284, bullish, ma_rising}}
+    用 yfinance 逐檔抓歷史股價，計算 87MA / 284MA / 20日股價高點
+    回傳 {股票代號: {ma87, ma87_prev, ma284, bullish, ma_rising, stock_high_20d, stock_close}}
     """
     try:
         import yfinance as yf
@@ -150,7 +150,7 @@ def fetch_ma_data(stock_codes: list) -> dict:
         print("[警告] 未安裝 yfinance，跳過均線計算（pip install yfinance）")
         return {}
 
-    print(f"[均線] 準備計算 {len(stock_codes)} 檔標的股票的 87MA / 284MA...")
+    print(f"[均線] 準備計算 {len(stock_codes)} 檔標的股票的 87MA / 284MA / 20日高...")
 
     result = {}
     failed = []
@@ -196,7 +196,7 @@ def fetch_ma_data(stock_codes: list) -> dict:
 
 
 def _calc_ma(close: pd.Series, symbol: str, result: dict):
-    """計算單檔的 87MA / 284MA 並存入 result"""
+    """計算單檔的 87MA / 284MA / 20日高 並存入 result"""
     ma87 = close.rolling(87).mean()
     ma284 = close.rolling(284).mean()
 
@@ -207,12 +207,18 @@ def _calc_ma(close: pd.Series, symbol: str, result: dict):
     if pd.isna(ma87_today) or pd.isna(ma284_today):
         return
 
+    # 過去 20 日最高收盤（含今日）
+    stock_high_20d = close.tail(20).max() if len(close) >= 20 else close.max()
+    stock_close = close.iloc[-1]
+
     result[symbol] = {
         "ma87": round(ma87_today, 2),
         "ma87_prev": round(ma87_yesterday, 2),
         "ma284": round(ma284_today, 2),
         "bullish": ma87_today > ma284_today,       # 多頭排列
         "ma_rising": ma87_today > ma87_yesterday,   # 均線上揚
+        "stock_high_20d": round(float(stock_high_20d), 2),
+        "stock_close": round(float(stock_close), 2),
     }
 
 
@@ -228,6 +234,117 @@ def apply_ma_to_df(df: pd.DataFrame, ma_data: dict) -> pd.DataFrame:
     df["均線上揚"] = df["股票代號"].map(
         lambda x: ma_data.get(x, {}).get("ma_rising", True)  # 無資料時保留
     )
+    df["股價20日高"] = df["股票代號"].map(lambda x: ma_data.get(x, {}).get("stock_high_20d"))
+    df["股價收盤"] = df["股票代號"].map(lambda x: ma_data.get(x, {}).get("stock_close"))
+
+    return df
+
+
+# ═══════════════════════════════════════════
+#  2.6 CB 歷史價格累積（為「領先創高」策略使用）
+# ═══════════════════════════════════════════
+HISTORY_DIR = "history"
+CB_PRICES_FILE = os.path.join(HISTORY_DIR, "cb_prices.json")
+CB_PRICES_MAX_DAYS = 30  # 只保留最近 30 個交易日，避免檔案膨脹
+
+
+def load_cb_price_history() -> dict:
+    """讀取 CB 歷史收盤價快取"""
+    if not os.path.exists(CB_PRICES_FILE):
+        return {}
+    try:
+        with open(CB_PRICES_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, KeyError):
+        return {}
+
+
+def update_cb_price_history(df: pd.DataFrame) -> dict:
+    """
+    把今日每檔 CB 的收盤價追加進歷史，只保留最近 CB_PRICES_MAX_DAYS 筆
+    回傳更新後的 history dict（呼叫端可直接用於篩選）
+    """
+    history = load_cb_price_history()
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    for _, row in df.iterrows():
+        code = str(row.get("代號", ""))
+        price = row.get("債券市價")
+        vol = row.get("CB成交量", 0)
+        if not code or pd.isna(price):
+            continue
+
+        if code not in history:
+            history[code] = []
+
+        # 如果今日已存在（例如同日重跑），覆蓋
+        history[code] = [d for d in history[code] if d.get("date") != today_str]
+        history[code].append({
+            "date": today_str,
+            "close": round(float(price), 2),
+            "vol": int(vol) if pd.notna(vol) else 0,
+        })
+
+        # 按日期排序後只留最新 N 筆
+        history[code].sort(key=lambda x: x["date"])
+        history[code] = history[code][-CB_PRICES_MAX_DAYS:]
+
+    # 儲存
+    os.makedirs(HISTORY_DIR, exist_ok=True)
+    with open(CB_PRICES_FILE, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+
+    return history
+
+
+def cb_history_depth(history: dict) -> int:
+    """累積的最長歷史天數（所有 CB 中最長的那一檔）"""
+    if not history:
+        return 0
+    return max(len(v) for v in history.values())
+
+
+def apply_cb_history_to_df(df: pd.DataFrame, history: dict, window: int) -> pd.DataFrame:
+    """
+    把 CB 歷史價格衍生欄位合併到 df
+    - CB20日高、CB是否創高、CB放量倍數
+    """
+    df = df.copy()
+
+    cb_high_list = []
+    cb_is_high_list = []
+    cb_vol_ratio_list = []
+
+    for _, row in df.iterrows():
+        code = str(row.get("代號", ""))
+        today_price = row.get("債券市價")
+        today_vol = row.get("CB成交量", 0)
+
+        hist = history.get(code, [])
+        # 取過去 window 天（含今日）
+        recent = hist[-window:] if len(hist) >= 2 else hist
+        closes = [d["close"] for d in recent]
+
+        if len(closes) >= 2:
+            high = max(closes)
+            cb_high_list.append(round(high, 2))
+            # 創高判斷：今日收盤 >= 窗口內最高 × 0.999（容許浮點誤差）
+            is_high = today_price is not None and not pd.isna(today_price) and today_price >= high * 0.999
+            cb_is_high_list.append(is_high)
+        else:
+            cb_high_list.append(None)
+            cb_is_high_list.append(False)
+
+        # CB 放量倍數 = 今日量 / 5日均量
+        avg5 = row.get("CB均量5日")
+        if avg5 and avg5 > 0 and today_vol:
+            cb_vol_ratio_list.append(round(today_vol / avg5, 2))
+        else:
+            cb_vol_ratio_list.append(None)
+
+    df["CB20日高"] = cb_high_list
+    df["CB創20日高"] = cb_is_high_list
+    df["CB放量倍數"] = cb_vol_ratio_list
 
     return df
 
@@ -275,6 +392,39 @@ def filter_breakthrough(df):
     mask_avg = df["CB均量"] > 50
 
     result = df[mask_premium & mask_stock & mask_vol & mask_avg]
+    return result
+
+
+@register_filter("領先創高")
+def filter_leader(df):
+    """
+    可轉債領先股價創高（領先訊號）：
+    1. CB 今日收盤 = 累積窗口內最高（= 創窗口新高）
+    2. 股票今日收盤 < 20日股價高點 × 0.98（股票未創高，有 2% 緩衝）
+    3. CB 放量倍數 >= 1.3（今日成交量 / 5日均量）
+    4. CB 5日均量 >= 20 張（流動性門檻）
+    """
+    # 基礎欄位存在性保護
+    if "CB創20日高" not in df.columns:
+        return df.iloc[0:0]  # 空 DataFrame
+
+    # 條件 1：CB 創窗口高
+    mask_cb_high = df["CB創20日高"] == True
+
+    # 條件 2：股票未創高（stock_high_20d 存在才判斷，沒資料保留）
+    stock_high = df["股價20日高"]
+    stock_close = df["股價收盤"]
+    # 如果 yfinance 抓不到股票資料，保留（給 benefit of doubt）
+    mask_stock = stock_high.isna() | stock_close.isna() | (stock_close < stock_high * 0.98)
+
+    # 條件 3：CB 放量倍數 >= 1.3
+    vol_ratio = df["CB放量倍數"].fillna(0)
+    mask_vol = vol_ratio >= 1.3
+
+    # 條件 4：CB 流動性
+    mask_liq = df["CB均量5日"].fillna(0) >= 20
+
+    result = df[mask_cb_high & mask_stock & mask_vol & mask_liq]
     return result
 
 
@@ -326,8 +476,6 @@ def apply_strategy(df, strategy, strategy_name=""):
 # ═══════════════════════════════════════════
 #  4. 歷史紀錄（比對新增 CB）
 # ═══════════════════════════════════════════
-HISTORY_DIR = "history"
-
 
 def load_previous_results(strategy_name: str) -> set:
     """讀取前一次篩選結果的 CB 代號"""
@@ -369,6 +517,7 @@ def save_current_results(strategy_name: str, codes: list, df: pd.DataFrame = Non
             "債券市價", "標的股價", "轉換價格", "轉換價值",
             "溢價率", "CB成交量", "CB均量5日", "CB均量20日",
             "到期日", "TCRI", "MA87", "MA284",
+            "CB20日高", "CB放量倍數", "股價20日高",
         ]
         existing = [c for c in export_cols if c in df.columns]
         df_export = df[existing].copy()
@@ -400,7 +549,7 @@ def save_current_results(strategy_name: str, codes: list, df: pd.DataFrame = Non
 # ═══════════════════════════════════════════
 #  5. 格式化 Telegram 訊息
 # ═══════════════════════════════════════════
-def format_telegram_message(strategy_name, strategy_desc, df, new_codes=None):
+def format_telegram_message(strategy_name, strategy_desc, df, new_codes=None, extra_note=""):
     if new_codes is None:
         new_codes = set()
     today_str = datetime.now().strftime("%Y/%m/%d")
@@ -413,6 +562,8 @@ def format_telegram_message(strategy_name, strategy_desc, df, new_codes=None):
         lines.append(f"📅 {today_str}（篩出 {len(df)} 檔，🆕 {new_count} 檔新增）")
     else:
         lines.append(f"📅 {today_str}（篩出 {len(df)} 檔）")
+    if extra_note:
+        lines.append(f"_{extra_note}_")
     lines.append("─" * 24)
 
     # 新增的排最上面
@@ -435,6 +586,8 @@ def format_telegram_message(strategy_name, strategy_desc, df, new_codes=None):
         expiry = row.get("到期日", None)
         ma87 = row.get("MA87", None)
         ma284 = row.get("MA284", None)
+        vol_ratio = row.get("CB放量倍數", None)
+        cb_high = row.get("CB20日高", None)
 
         emoji = "🟢" if premium < 0 else ("🟡" if premium < 0.05 else "🔴")
         shield = "🛡" if guaranteed == "有" else ""
@@ -447,12 +600,20 @@ def format_telegram_message(strategy_name, strategy_desc, df, new_codes=None):
         lines.append(f"  股價 {stock_price:.2f} ｜轉換價 {conv_price:.2f}")
         lines.append(f"  轉換價值 {cv:.2f} ｜到期 {exp_str}")
         lines.append(f"  成交 {int(cb_vol)} ｜5日均 {avg5:.0f} ｜20日均 {avg20:.0f}")
+        # 領先創高策略額外顯示放量倍數與窗口高點
+        if strategy_name == "領先創高" and vol_ratio is not None:
+            extra = f"  🚀 放量 {vol_ratio:.1f}x"
+            if cb_high is not None:
+                extra += f" ｜窗口高 {cb_high:.2f}"
+            lines.append(extra)
         if ma_str:
             lines.append(f"  📈 {ma_str}")
         lines.append("")
 
     lines.append("")
     lines.append("🟢折價 🟡微溢價(<5%) 🔴溢價 🛡擔保 📈均線多頭 🆕新增")
+    if strategy_name == "領先創高":
+        lines.append("🚀 CB創高＋放量 但股票未創高，疑似主力領先佈局")
 
     return "\n".join(lines)
 
@@ -514,7 +675,7 @@ def main():
     stock_codes = df_active["股票代號"].unique().tolist()
     print(f"[均線] CB成交量≥10 的標的股票: {len(stock_codes)} 檔")
 
-    # 用 yfinance 計算均線
+    # 用 yfinance 計算均線 + 股價 20 日高
     ma_data = fetch_ma_data(stock_codes)
     if ma_data:
         df = apply_ma_to_df(df, ma_data)
@@ -523,6 +684,16 @@ def main():
         df["MA284"] = None
         df["多頭排列"] = True   # 沒有均線資料時不篩
         df["均線上揚"] = True
+        df["股價20日高"] = None
+        df["股價收盤"] = None
+
+    # 累積 CB 歷史價格（為「領先創高」策略用）
+    cb_history = update_cb_price_history(df)
+    history_depth = cb_history_depth(cb_history)
+    # 窗口 = min(20, 目前累積天數)，最少 2 天才有意義
+    window = min(20, history_depth)
+    print(f"[CB歷史] 累積天數: {history_depth}，使用 {window} 日窗口判斷創高")
+    df = apply_cb_history_to_df(df, cb_history, window)
 
     # 策略
     strategies = config.get("strategies", {})
@@ -555,6 +726,14 @@ def main():
         if desc:
             print(f"   {desc}")
 
+        # 「領先創高」需要至少 5 天歷史才有意義
+        min_days = strategy.get("min_history_days", 0)
+        if min_days > 0 and history_depth < min_days:
+            print(f"  [略過] 此策略需要至少 {min_days} 天 CB 歷史資料，目前僅有 {history_depth} 天")
+            # 仍然儲存空結果，讓前端顯示（但 tab 會因 count=0 而自動隱藏）
+            save_current_results(name, [], pd.DataFrame())
+            continue
+
         df_filtered = apply_strategy(df, strategy, strategy_name=name)
 
         # 比對前一日結果，找出新增的 CB
@@ -567,6 +746,11 @@ def main():
         elif not prev_codes:
             new_codes = set()  # 第一次跑，全部都不標新增
 
+        # 領先創高策略：窗口不足 20 天時在訊息中註記
+        extra_note = ""
+        if name == "領先創高" and window < 20:
+            extra_note = f"⚠ 僅累積 {window} 日資料（尚未達完整 20 日窗口，訊號僅供參考）"
+
         if df_filtered.empty:
             print(f"  [結果] 沒有符合條件的可轉債")
             msg = (
@@ -574,9 +758,11 @@ def main():
                 f"📅 {datetime.now().strftime('%Y/%m/%d')}\n\n"
                 f"沒有符合條件的可轉債"
             )
+            if extra_note:
+                msg += f"\n_{extra_note}_"
         else:
             print(f"  [結果] 篩選出 {len(df_filtered)} 檔")
-            msg = format_telegram_message(name, desc, df_filtered, new_codes)
+            msg = format_telegram_message(name, desc, df_filtered, new_codes, extra_note)
 
         # 儲存本次結果（代號 + 完整資料）
         save_current_results(name, current_codes, df_filtered)
@@ -600,7 +786,11 @@ def main():
             print(f"  [輸出] {csv_path}")
 
         if can_send:
-            send_telegram(bot_token, chat_id, msg)
+            # 沒篩到就不發 Telegram（避免每天都收到「沒有符合條件」）
+            if not df_filtered.empty:
+                send_telegram(bot_token, chat_id, msg)
+            else:
+                print("  [通知] 沒有結果，跳過 Telegram")
         elif args.dry_run:
             print("  [測試模式] 跳過 Telegram")
 
@@ -609,6 +799,7 @@ def main():
     latest_data = {
         "date": datetime.now().strftime("%Y-%m-%d"),
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "cb_history_depth": history_depth,
         "strategies": {},
     }
     for name, strategy in config.get("strategies", {}).items():
