@@ -378,7 +378,14 @@ def save_current_results(strategy_name: str, codes: list, df: pd.DataFrame = Non
             if pd.api.types.is_datetime64_any_dtype(df_export[col]):
                 df_export[col] = df_export[col].dt.strftime("%Y-%m-%d")
 
-        records = df_export.where(df_export.notna(), None).to_dict(orient="records")
+        records = df_export.to_dict(orient="records")
+        # 清除所有 NaN 和 float('nan')
+        import math
+        for rec in records:
+            for k, v in rec.items():
+                if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                    rec[k] = None
+
         daily_data = {
             "date": today,
             "strategy": strategy_name,
@@ -386,7 +393,7 @@ def save_current_results(strategy_name: str, codes: list, df: pd.DataFrame = Non
             "data": records,
         }
         with open(daily_path, "w", encoding="utf-8") as f:
-            json.dump(daily_data, f, ensure_ascii=False, indent=2, default=str)
+            json.dump(daily_data, f, ensure_ascii=False, indent=2)
         print(f"  [歷史] 已存 {daily_path}")
 
 
