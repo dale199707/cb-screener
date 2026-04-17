@@ -67,7 +67,7 @@ def fetch_cb_data() -> pd.DataFrame:
 
     df = pd.DataFrame(results)
 
-    # 欄位對應（API 欄位 → 程式內部欄位）
+    # 欄位對應
     col_map = {
         "bond_code": "代號",
         "underlying_bond": "債券名稱",
@@ -92,7 +92,6 @@ def fetch_cb_data() -> pd.DataFrame:
         "tcri": "TCRI",
         "the_degree_of_price_inside_and_outside": "價內外程度",
     }
-
     df = df.rename(columns=col_map)
 
     # 數值轉換
@@ -105,14 +104,14 @@ def fetch_cb_data() -> pd.DataFrame:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    # 溢價率：API 回的是百分比數字（如 40.42），轉成小數（0.4042）
+    # 溢價率（百分比 → 小數）
     df["溢價率"] = df["溢價率_raw"] / 100
 
-    # 賣回收益率：可能是 "-"
+    # 賣回收益率
     df["賣回收益率"] = pd.to_numeric(
         df["賣回收益率_raw"].replace("-", None), errors="coerce"
     )
-    df["賣回收益率"] = df["賣回收益率"] / 100  # 百分比轉小數
+    df["賣回收益率"] = df["賣回收益率"] / 100
 
     # 日期轉換
     for col in ["發行日", "到期日", "下一賣回日"]:
@@ -122,8 +121,6 @@ def fetch_cb_data() -> pd.DataFrame:
     # 衍生欄位
     today = datetime.now()
     df["到期剩餘天數"] = (df["到期日"] - today).dt.days
-
-    # 股價對轉換價格的比率
     df["股價轉換價比"] = (df["標的股價"] / df["轉換價格"]) - 1
 
     # 擔保
@@ -131,10 +128,8 @@ def fetch_cb_data() -> pd.DataFrame:
         lambda x: "有" if str(x) != "無" and pd.notna(x) else "無"
     )
 
-    # CB均量（用 5日均量）
+    # CB均量
     df["CB均量"] = df["CB均量5日"].fillna(0)
-
-    # 整數化
     df["CB成交量"] = df["CB成交量"].fillna(0).astype(int)
 
     print(f"[資料] 成功取得 {len(df)} 檔可轉債（即時盤後資料）")
@@ -347,17 +342,52 @@ def load_previous_results(strategy_name: str) -> set:
         return set()
 
 
-def save_current_results(strategy_name: str, codes: list):
-    """儲存本次篩選結果的 CB 代號"""
+def save_current_results(strategy_name: str, codes: list, df: pd.DataFrame = None):
+    """儲存本次篩選結果（代號清單 + 完整資料 JSON）"""
     os.makedirs(HISTORY_DIR, exist_ok=True)
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # 1) 儲存代號清單（用於隔日比對新增）
     path = os.path.join(HISTORY_DIR, f"{strategy_name}.json")
     data = {
-        "date": datetime.now().strftime("%Y-%m-%d"),
+        "date": today,
         "count": len(codes),
         "codes": codes,
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+    # 2) 儲存完整資料（用於前端 / 歷史走勢）
+    if df is not None and not df.empty:
+        daily_dir = os.path.join(HISTORY_DIR, "daily")
+        os.makedirs(daily_dir, exist_ok=True)
+        daily_path = os.path.join(daily_dir, f"{today}_{strategy_name}.json")
+
+        # 選擇要存的欄位
+        export_cols = [
+            "代號", "債券名稱", "股票代號", "有擔保",
+            "債券市價", "標的股價", "轉換價格", "轉換價值",
+            "溢價率", "CB成交量", "CB均量5日", "CB均量20日",
+            "到期日", "TCRI", "MA87", "MA284",
+        ]
+        existing = [c for c in export_cols if c in df.columns]
+        df_export = df[existing].copy()
+
+        # 日期轉字串
+        for col in df_export.columns:
+            if pd.api.types.is_datetime64_any_dtype(df_export[col]):
+                df_export[col] = df_export[col].dt.strftime("%Y-%m-%d")
+
+        records = df_export.to_dict(orient="records")
+        daily_data = {
+            "date": today,
+            "strategy": strategy_name,
+            "count": len(records),
+            "data": records,
+        }
+        with open(daily_path, "w", encoding="utf-8") as f:
+            json.dump(daily_data, f, ensure_ascii=False, indent=2)
+        print(f"  [歷史] 已存 {daily_path}")
 
 
 # ═══════════════════════════════════════════
@@ -541,8 +571,8 @@ def main():
             print(f"  [結果] 篩選出 {len(df_filtered)} 檔")
             msg = format_telegram_message(name, desc, df_filtered, new_codes)
 
-        # 儲存本次結果
-        save_current_results(name, current_codes)
+        # 儲存本次結果（代號 + 完整資料）
+        save_current_results(name, current_codes, df_filtered)
 
         print()
         print(msg)
