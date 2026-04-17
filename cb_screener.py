@@ -597,6 +597,25 @@ def main():
         elif args.dry_run:
             print("  [測試模式] 跳過 Telegram")
 
+    # 儲存 latest.json（前端用，包含所有策略的最新結果）
+    latest_path = os.path.join(HISTORY_DIR, "latest.json")
+    latest_data = {
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "strategies": {},
+    }
+    for name, strategy in config.get("strategies", {}).items():
+        daily_path = os.path.join(
+            HISTORY_DIR, "daily",
+            f"{datetime.now().strftime('%Y-%m-%d')}_{name}.json"
+        )
+        if os.path.exists(daily_path):
+            with open(daily_path, "r", encoding="utf-8") as f:
+                latest_data["strategies"][name] = json.load(f)
+    with open(latest_path, "w", encoding="utf-8") as f:
+        json.dump(latest_data, f, ensure_ascii=False, indent=2)
+    print(f"[前端] 已更新 {latest_path}")
+
     print(f"\n{'=' * 44}")
     print("[完成] 所有策略執行完畢")
 
