@@ -474,33 +474,107 @@ def apply_strategy(df, strategy, strategy_name=""):
 
 
 # ═══════════════════════════════════════════
-#  4. 歷史紀錄（比對新增 CB）
+#  4. 歷史紀錄（追蹤首次上榜日期，用於 🆕 標記）
 # ═══════════════════════════════════════════
 
-def load_previous_results(strategy_name: str) -> set:
-    """讀取前一次篩選結果的 CB 代號"""
+# 🆕 標記保留天數（含首日）
+NEW_TAG_DAYS = 3
+
+
+def load_history(strategy_name: str) -> dict:
+    """
+    讀取策略的歷史紀錄
+    新格式：
+    {
+      "date": "2026-04-22",                # 最後一次更新日期
+      "codes": [...],                       # 當日結果代號（向後相容）
+      "first_seen": {"37022": "2026-04-22", ...}  # 各 CB 首次上榜日期
+    }
+    """
     path = os.path.join(HISTORY_DIR, f"{strategy_name}.json")
     if not os.path.exists(path):
-        return set()
+        return {"first_seen": {}, "codes": []}
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return set(data.get("codes", []))
+        # 向後相容：如果舊版沒有 first_seen，從空開始
+        if "first_seen" not in data:
+            data["first_seen"] = {}
+        return data
     except (json.JSONDecodeError, KeyError):
-        return set()
+        return {"first_seen": {}, "codes": []}
 
 
-def save_current_results(strategy_name: str, codes: list, df: pd.DataFrame = None):
-    """儲存本次篩選結果（代號清單 + 完整資料 JSON）"""
+def determine_new_tags(current_codes: list, prev_history: dict) -> dict:
+    """
+    根據「首次上榜日」規則決定要標 🆕 的 CB 與其首次日期
+    回傳 {code: "YYYY-MM-DD"}，有在這個 dict 裡的代號就要標 🆕
+
+    邏輯：
+    - 若 code 不在 prev first_seen 裡 → 今天就是首次上榜
+    - 若 code 在 prev first_seen 裡，但首次日距今 > NEW_TAG_DAYS 且目前不在 🆕 期內 → 重設為今天
+    - 若 code 在 prev first_seen 裡，且距今 ≤ NEW_TAG_DAYS → 沿用原本的首次日
+    - 若 code 在 prev first_seen 裡，但距今 > NEW_TAG_DAYS → 不標 🆕（過期）
+    同時更新 first_seen dict 以便儲存。
+    """
+    today = datetime.now().date()
+    today_str = today.strftime("%Y-%m-%d")
+    prev_first_seen = prev_history.get("first_seen", {}) or {}
+
+    new_tags = {}       # 要顯示 🆕 的 CB: {code: first_seen_date_str}
+    updated_first_seen = {}  # 要寫回檔案的完整 first_seen（只包含今天仍上榜的）
+
+    for code in current_codes:
+        prev_date_str = prev_first_seen.get(code)
+        if prev_date_str is None:
+            # 從未上榜過 → 今天就是首次
+            updated_first_seen[code] = today_str
+            new_tags[code] = today_str
+        else:
+            try:
+                prev_date = datetime.strptime(prev_date_str, "%Y-%m-%d").date()
+                days_since = (today - prev_date).days
+            except ValueError:
+                # 日期格式壞掉，當成新的
+                updated_first_seen[code] = today_str
+                new_tags[code] = today_str
+                continue
+
+            if days_since < NEW_TAG_DAYS:
+                # 還在 🆕 期內 → 沿用原首次日
+                updated_first_seen[code] = prev_date_str
+                new_tags[code] = prev_date_str
+            else:
+                # 過了 🆕 期 → 保留首次日但不標 🆕
+                # （規則：「超過 3 天消失且再出現 → 視為全新首次」
+                #   但如果這檔連續都在清單上，就只是舊新聞，不重設）
+                # 判斷「是否連續上榜」：看前次歷史中這個 code 是否存在
+                was_on_list = code in prev_history.get("codes", [])
+                if was_on_list:
+                    # 昨天也在 → 連續上榜的舊新聞，不標 🆕，保留原首次日
+                    updated_first_seen[code] = prev_date_str
+                else:
+                    # 昨天不在但前幾天曾在 → 消失後再現，若超過 NEW_TAG_DAYS 則重設
+                    updated_first_seen[code] = today_str
+                    new_tags[code] = today_str
+
+    return new_tags, updated_first_seen
+
+
+def save_current_results(strategy_name: str, codes: list,
+                         updated_first_seen: dict,
+                         df: pd.DataFrame = None):
+    """儲存本次篩選結果（代號清單 + 首次上榜日 + 完整資料 JSON）"""
     os.makedirs(HISTORY_DIR, exist_ok=True)
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # 1) 儲存代號清單（用於隔日比對新增）
+    # 1) 儲存代號清單 + first_seen（用於隔日比對）
     path = os.path.join(HISTORY_DIR, f"{strategy_name}.json")
     data = {
         "date": today,
         "count": len(codes),
         "codes": codes,
+        "first_seen": updated_first_seen,
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -511,7 +585,6 @@ def save_current_results(strategy_name: str, codes: list, df: pd.DataFrame = Non
         os.makedirs(daily_dir, exist_ok=True)
         daily_path = os.path.join(daily_dir, f"{today}_{strategy_name}.json")
 
-        # 選擇要存的欄位
         export_cols = [
             "代號", "債券名稱", "股票代號", "有擔保",
             "債券市價", "標的股價", "轉換價格", "轉換價值",
@@ -528,6 +601,12 @@ def save_current_results(strategy_name: str, codes: list, df: pd.DataFrame = Non
                 df_export[col] = df_export[col].dt.strftime("%Y-%m-%d")
 
         records = df_export.to_dict(orient="records")
+        # 把 first_seen 塞進每筆記錄（讓前端也能顯示 🆕）
+        for rec in records:
+            code = str(rec.get("代號", ""))
+            fs = updated_first_seen.get(code)
+            rec["首次上榜"] = fs
+
         # 清除所有 NaN 和 float('nan')
         import math
         for rec in records:
@@ -549,15 +628,18 @@ def save_current_results(strategy_name: str, codes: list, df: pd.DataFrame = Non
 # ═══════════════════════════════════════════
 #  5. 格式化 Telegram 訊息
 # ═══════════════════════════════════════════
-def format_telegram_message(strategy_name, strategy_desc, df, new_codes=None, extra_note=""):
-    if new_codes is None:
-        new_codes = set()
+def format_telegram_message(strategy_name, strategy_desc, df, new_tags=None, extra_note=""):
+    """
+    new_tags: dict {code: "YYYY-MM-DD"}，裡面有的 code 才標 🆕，日期為首次上榜日
+    """
+    if new_tags is None:
+        new_tags = {}
     today_str = datetime.now().strftime("%Y/%m/%d")
     lines = []
     lines.append(f"📊 *{strategy_name}*")
     if strategy_desc:
         lines.append(f"_{strategy_desc}_")
-    new_count = sum(1 for _, r in df.iterrows() if str(r.get("代號", "")) in new_codes)
+    new_count = sum(1 for _, r in df.iterrows() if str(r.get("代號", "")) in new_tags)
     if new_count > 0:
         lines.append(f"📅 {today_str}（篩出 {len(df)} 檔，🆕 {new_count} 檔新增）")
     else:
@@ -568,7 +650,7 @@ def format_telegram_message(strategy_name, strategy_desc, df, new_codes=None, ex
 
     # 新增的排最上面
     df = df.copy()
-    df["_is_new"] = df["代號"].astype(str).isin(new_codes)
+    df["_is_new"] = df["代號"].astype(str).isin(new_tags.keys())
     df = df.sort_values("_is_new", ascending=False, kind="stable")
 
     for _, row in df.iterrows():
@@ -591,7 +673,16 @@ def format_telegram_message(strategy_name, strategy_desc, df, new_codes=None, ex
 
         emoji = "🟢" if premium < 0 else ("🟡" if premium < 0.05 else "🔴")
         shield = "🛡" if guaranteed == "有" else ""
-        is_new = "🆕" if code in new_codes else ""
+        # 🆕 標記附加首次上榜日期（M/D 格式）
+        if code in new_tags:
+            fs_str = new_tags[code]  # YYYY-MM-DD
+            try:
+                fs_dt = datetime.strptime(fs_str, "%Y-%m-%d")
+                is_new = f"🆕{fs_dt.month}/{fs_dt.day}"
+            except ValueError:
+                is_new = "🆕"
+        else:
+            is_new = ""
         exp_str = expiry.strftime("%Y/%m/%d") if pd.notna(expiry) else "-"
         ma_str = f"87MA {ma87:.1f} / 284MA {ma284:.1f}" if pd.notna(ma87) and pd.notna(ma284) else ""
 
@@ -731,20 +822,23 @@ def main():
         if min_days > 0 and history_depth < min_days:
             print(f"  [略過] 此策略需要至少 {min_days} 天 CB 歷史資料，目前僅有 {history_depth} 天")
             # 仍然儲存空結果，讓前端顯示（但 tab 會因 count=0 而自動隱藏）
-            save_current_results(name, [], pd.DataFrame())
+            save_current_results(name, [], {}, pd.DataFrame())
             continue
 
         df_filtered = apply_strategy(df, strategy, strategy_name=name)
 
-        # 比對前一日結果，找出新增的 CB
-        prev_codes = load_previous_results(name)
+        # 讀取歷史，計算 🆕 標記（以首次上榜日為準，保留 3 天）
+        prev_history = load_history(name)
         current_codes = df_filtered["代號"].astype(str).tolist() if not df_filtered.empty else []
-        new_codes = set(current_codes) - prev_codes
+        new_tags, updated_first_seen = determine_new_tags(current_codes, prev_history)
 
-        if new_codes and prev_codes:  # prev_codes 為空代表第一次跑，不標新增
-            print(f"  [新增] 🆕 {len(new_codes)} 檔: {', '.join(sorted(new_codes))}")
-        elif not prev_codes:
-            new_codes = set()  # 第一次跑，全部都不標新增
+        # 第一次跑（沒有任何歷史紀錄）時，全部都不標 🆕
+        if not prev_history.get("first_seen") and not prev_history.get("codes"):
+            new_tags = {}
+
+        if new_tags:
+            tagged = [f"{c}({d})" for c, d in sorted(new_tags.items())]
+            print(f"  [新增] 🆕 {len(new_tags)} 檔: {', '.join(tagged)}")
 
         # 領先創高策略：窗口不足 20 天時在訊息中註記
         extra_note = ""
@@ -762,10 +856,10 @@ def main():
                 msg += f"\n_{extra_note}_"
         else:
             print(f"  [結果] 篩選出 {len(df_filtered)} 檔")
-            msg = format_telegram_message(name, desc, df_filtered, new_codes, extra_note)
+            msg = format_telegram_message(name, desc, df_filtered, new_tags, extra_note)
 
-        # 儲存本次結果（代號 + 完整資料）
-        save_current_results(name, current_codes, df_filtered)
+        # 儲存本次結果（代號 + first_seen + 完整資料）
+        save_current_results(name, current_codes, updated_first_seen, df_filtered)
 
         print()
         print(msg)
