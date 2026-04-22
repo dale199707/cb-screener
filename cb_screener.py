@@ -810,6 +810,9 @@ def main():
 
     output_config = config.get("output", {})
 
+    # 收集所有策略的新上榜 CB，供新聞生成器讀取
+    all_new_items = {}  # {cb_code: record_dict}
+
     for name, strategy in strategies.items():
         desc = strategy.get("description", "")
         print(f"\n{'─' * 44}")
@@ -839,6 +842,28 @@ def main():
         if new_tags:
             tagged = [f"{c}({d})" for c, d in sorted(new_tags.items())]
             print(f"  [新增] 🆕 {len(new_tags)} 檔: {', '.join(tagged)}")
+
+            # 收集新上榜的 CB 資料給新聞生成器（只保留當天首次上榜的，去重）
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            for code, fs_date in new_tags.items():
+                if fs_date != today_str:
+                    continue  # 只處理今天首次上榜的（避免重複生成）
+                if code in all_new_items:
+                    continue
+                # 從 df_filtered 找出這一檔的完整資料
+                row_df = df_filtered[df_filtered["代號"].astype(str) == code]
+                if not row_df.empty:
+                    record = row_df.iloc[0].to_dict()
+                    # datetime 轉字串
+                    for k, v in list(record.items()):
+                        if isinstance(v, pd.Timestamp):
+                            record[k] = v.strftime("%Y-%m-%d") if pd.notna(v) else None
+                        elif isinstance(v, float):
+                            import math
+                            if math.isnan(v) or math.isinf(v):
+                                record[k] = None
+                    record["_from_strategy"] = name
+                    all_new_items[code] = record
 
         # 領先創高策略：窗口不足 20 天時在訊息中註記
         extra_note = ""
@@ -887,6 +912,17 @@ def main():
                 print("  [通知] 沒有結果，跳過 Telegram")
         elif args.dry_run:
             print("  [測試模式] 跳過 Telegram")
+
+    # 儲存今日新上榜的 CB，供 news_generator.py 讀取
+    news_queue_path = os.path.join(HISTORY_DIR, "new_for_news.json")
+    news_queue_data = {
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "count": len(all_new_items),
+        "items": list(all_new_items.values()),
+    }
+    with open(news_queue_path, "w", encoding="utf-8") as f:
+        json.dump(news_queue_data, f, ensure_ascii=False, indent=2, default=str)
+    print(f"[新聞] 已寫入 {news_queue_path}（{len(all_new_items)} 檔待處理）")
 
     # 儲存 latest.json（前端用，包含所有策略的最新結果）
     latest_path = os.path.join(HISTORY_DIR, "latest.json")

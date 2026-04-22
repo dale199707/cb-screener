@@ -39,6 +39,16 @@ jobs:
       - name: Run screener
         run: python3 cb_screener.py
 
+      # ── 新聞整理（只在 2026-04-22 之後啟用）──
+      # 到 4/22 再解開 if 條件，先留著工作流程但條件永遠 false
+      - name: Generate news summaries
+        if: ${{ vars.ENABLE_NEWS_GENERATOR == 'true' }}
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 news_generator.py
+
       - name: Commit history
         run: |
           git config user.name "github-actions[bot]"
@@ -62,10 +72,15 @@ jobs:
           cp history/latest.json /tmp/dashboard/data/ 2>/dev/null || true
           mkdir -p /tmp/dashboard/data/daily
           cp history/daily/*.json /tmp/dashboard/data/daily/ 2>/dev/null || true
+          # Copy news HTML pages (如果有)
+          if [ -d "news_out" ]; then
+            mkdir -p /tmp/dashboard/news
+            cp news_out/*.html /tmp/dashboard/news/ 2>/dev/null || true
+          fi
           # Push
           cd /tmp/dashboard
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/ -f
+          git add data/ news/ -f 2>/dev/null || git add data/ -f
           git diff --cached --quiet || git commit -m "更新資料 $(TZ=Asia/Taipei date +%Y%m%d)"
           git push || echo "Nothing to push"
