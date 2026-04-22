@@ -486,95 +486,99 @@ def load_history(strategy_name: str) -> dict:
     讀取策略的歷史紀錄
     新格式：
     {
-      "date": "2026-04-22",                # 最後一次更新日期
-      "codes": [...],                       # 當日結果代號（向後相容）
-      "first_seen": {"37022": "2026-04-22", ...}  # 各 CB 首次上榜日期
+      "date": "2026-04-22",
+      "codes": [...],
+      "first_seen": {"37022": "2026-04-22", ...},        # 各 CB 首次上榜日期
+      "new_ticks_left": {"37022": 2, ...}                  # 還能顯示 🆕 的剩餘跑次
     }
     """
     path = os.path.join(HISTORY_DIR, f"{strategy_name}.json")
     if not os.path.exists(path):
-        return {"first_seen": {}, "codes": []}
+        return {"first_seen": {}, "codes": [], "new_ticks_left": {}}
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        # 向後相容：如果舊版沒有 first_seen，從空開始
         if "first_seen" not in data:
             data["first_seen"] = {}
+        if "new_ticks_left" not in data:
+            data["new_ticks_left"] = {}
         return data
     except (json.JSONDecodeError, KeyError):
-        return {"first_seen": {}, "codes": []}
+        return {"first_seen": {}, "codes": [], "new_ticks_left": {}}
 
 
-def determine_new_tags(current_codes: list, prev_history: dict) -> dict:
+def determine_new_tags(current_codes: list, prev_history: dict) -> tuple:
     """
-    根據「首次上榜日」規則決定要標 🆕 的 CB 與其首次日期
-    回傳 {code: "YYYY-MM-DD"}，有在這個 dict 裡的代號就要標 🆕
+    🆕 以「交易日 tick」計算：首次上榜當次起，共顯示 NEW_TAG_DAYS 次 Actions 跑的日子。
+    （例如 NEW_TAG_DAYS=3 代表從首次上榜跑 screener 起，接下來 3 次都會顯示 🆕）
 
     邏輯：
-    - 若 code 不在 prev first_seen 裡 → 今天就是首次上榜
-    - 若 code 在 prev first_seen 裡，但首次日距今 > NEW_TAG_DAYS 且目前不在 🆕 期內 → 重設為今天
-    - 若 code 在 prev first_seen 裡，且距今 ≤ NEW_TAG_DAYS → 沿用原本的首次日
-    - 若 code 在 prev first_seen 裡，但距今 > NEW_TAG_DAYS → 不標 🆕（過期）
-    同時更新 first_seen dict 以便儲存。
+    - code 未在 prev first_seen 中 → 今天首次上榜：first_seen=今天、ticks_left=NEW_TAG_DAYS-1
+    - code 在 prev first_seen 且 ticks_left > 0 → 消耗 1 tick：ticks_left 減 1，仍標 🆕
+    - code 在 prev first_seen 但 ticks_left <= 0：
+        - 若前次也在清單上（連續上榜，但 🆕 已過期） → 不標 🆕，保留首次日
+        - 若前次不在（消失後再現） → 視為全新首次上榜，重新開始
+    回傳 (new_tags, updated_first_seen, updated_ticks_left)
     """
     today = datetime.now().date()
     today_str = today.strftime("%Y-%m-%d")
     prev_first_seen = prev_history.get("first_seen", {}) or {}
+    prev_ticks = prev_history.get("new_ticks_left", {}) or {}
+    prev_codes = set(prev_history.get("codes", []) or [])
 
-    new_tags = {}       # 要顯示 🆕 的 CB: {code: first_seen_date_str}
-    updated_first_seen = {}  # 要寫回檔案的完整 first_seen（只包含今天仍上榜的）
+    new_tags = {}              # 要顯示 🆕 的 CB: {code: first_seen_date_str}
+    updated_first_seen = {}
+    updated_ticks_left = {}
 
     for code in current_codes:
         prev_date_str = prev_first_seen.get(code)
         if prev_date_str is None:
-            # 從未上榜過 → 今天就是首次
+            # 從未上榜 → 今天首次
             updated_first_seen[code] = today_str
+            updated_ticks_left[code] = NEW_TAG_DAYS - 1  # 今天已顯示，還可顯示 N-1 次
             new_tags[code] = today_str
         else:
-            try:
-                prev_date = datetime.strptime(prev_date_str, "%Y-%m-%d").date()
-                days_since = (today - prev_date).days
-            except ValueError:
-                # 日期格式壞掉，當成新的
-                updated_first_seen[code] = today_str
-                new_tags[code] = today_str
-                continue
+            prev_tick = prev_ticks.get(code, 0)
+            was_on_list = code in prev_codes
 
-            if days_since < NEW_TAG_DAYS:
-                # 還在 🆕 期內 → 沿用原首次日
+            if prev_tick > 0:
+                # 還在 🆕 期，消耗 1 tick
                 updated_first_seen[code] = prev_date_str
+                updated_ticks_left[code] = prev_tick - 1
                 new_tags[code] = prev_date_str
+            elif was_on_list:
+                # 連續上榜但 🆕 已過期 → 不再標
+                updated_first_seen[code] = prev_date_str
+                updated_ticks_left[code] = 0
             else:
-                # 過了 🆕 期 → 保留首次日但不標 🆕
-                # （規則：「超過 3 天消失且再出現 → 視為全新首次」
-                #   但如果這檔連續都在清單上，就只是舊新聞，不重設）
-                # 判斷「是否連續上榜」：看前次歷史中這個 code 是否存在
-                was_on_list = code in prev_history.get("codes", [])
-                if was_on_list:
-                    # 昨天也在 → 連續上榜的舊新聞，不標 🆕，保留原首次日
-                    updated_first_seen[code] = prev_date_str
-                else:
-                    # 昨天不在但前幾天曾在 → 消失後再現，若超過 NEW_TAG_DAYS 則重設
-                    updated_first_seen[code] = today_str
-                    new_tags[code] = today_str
+                # 消失後再現 → 視為全新首次
+                updated_first_seen[code] = today_str
+                updated_ticks_left[code] = NEW_TAG_DAYS - 1
+                new_tags[code] = today_str
 
-    return new_tags, updated_first_seen
+    return new_tags, updated_first_seen, updated_ticks_left
 
 
 def save_current_results(strategy_name: str, codes: list,
                          updated_first_seen: dict,
+                         updated_ticks_left: dict,
+                         new_tags: dict = None,
                          df: pd.DataFrame = None):
-    """儲存本次篩選結果（代號清單 + 首次上榜日 + 完整資料 JSON）"""
+    """儲存本次篩選結果（代號清單 + 首次上榜日 + ticks + 完整資料 JSON）"""
+    if new_tags is None:
+        new_tags = {}
+    new_tags_codes = set(new_tags.keys())
     os.makedirs(HISTORY_DIR, exist_ok=True)
     today = datetime.now().strftime("%Y-%m-%d")
 
-    # 1) 儲存代號清單 + first_seen（用於隔日比對）
+    # 1) 儲存代號清單 + first_seen + ticks（用於隔日比對）
     path = os.path.join(HISTORY_DIR, f"{strategy_name}.json")
     data = {
         "date": today,
         "count": len(codes),
         "codes": codes,
         "first_seen": updated_first_seen,
+        "new_ticks_left": updated_ticks_left,
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
@@ -605,7 +609,10 @@ def save_current_results(strategy_name: str, codes: list,
         for rec in records:
             code = str(rec.get("代號", ""))
             fs = updated_first_seen.get(code)
+            ticks = updated_ticks_left.get(code, 0)
             rec["首次上榜"] = fs
+            # 🆕 旗標：後端直接告訴前端要不要顯示（依交易日 tick 計算）
+            rec["是否新上榜"] = ticks >= 0 and code in new_tags_codes
 
         # 清除所有 NaN 和 float('nan')
         import math
@@ -825,19 +832,22 @@ def main():
         if min_days > 0 and history_depth < min_days:
             print(f"  [略過] 此策略需要至少 {min_days} 天 CB 歷史資料，目前僅有 {history_depth} 天")
             # 仍然儲存空結果，讓前端顯示（但 tab 會因 count=0 而自動隱藏）
-            save_current_results(name, [], {}, pd.DataFrame())
+            save_current_results(name, [], {}, {}, {}, pd.DataFrame())
             continue
 
         df_filtered = apply_strategy(df, strategy, strategy_name=name)
 
-        # 讀取歷史，計算 🆕 標記（以首次上榜日為準，保留 3 天）
+        # 讀取歷史，計算 🆕 標記（以交易日 tick 為準，保留 NEW_TAG_DAYS 次）
         prev_history = load_history(name)
         current_codes = df_filtered["代號"].astype(str).tolist() if not df_filtered.empty else []
-        new_tags, updated_first_seen = determine_new_tags(current_codes, prev_history)
+        new_tags, updated_first_seen, updated_ticks_left = determine_new_tags(current_codes, prev_history)
 
         # 第一次跑（沒有任何歷史紀錄）時，全部都不標 🆕
         if not prev_history.get("first_seen") and not prev_history.get("codes"):
             new_tags = {}
+            # 同時也清掉本次的 ticks（第一次跑不算 🆕）
+            for c in updated_ticks_left:
+                updated_ticks_left[c] = 0
 
         if new_tags:
             tagged = [f"{c}({d})" for c, d in sorted(new_tags.items())]
@@ -883,8 +893,8 @@ def main():
             print(f"  [結果] 篩選出 {len(df_filtered)} 檔")
             msg = format_telegram_message(name, desc, df_filtered, new_tags, extra_note)
 
-        # 儲存本次結果（代號 + first_seen + 完整資料）
-        save_current_results(name, current_codes, updated_first_seen, df_filtered)
+        # 儲存本次結果（代號 + first_seen + ticks + 完整資料）
+        save_current_results(name, current_codes, updated_first_seen, updated_ticks_left, new_tags, df_filtered)
 
         print()
         print(msg)
