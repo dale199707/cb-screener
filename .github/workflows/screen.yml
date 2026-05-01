@@ -39,8 +39,7 @@ jobs:
       - name: Run screener
         run: python3 cb_screener.py
 
-      # ── 新聞整理（只在 2026-04-22 之後啟用）──
-      # 到 4/22 再解開 if 條件，先留著工作流程但條件永遠 false
+      # ── 新聞整理（只在 ENABLE_NEWS_GENERATOR=true 時啟用）──
       - name: Generate news summaries
         if: ${{ vars.ENABLE_NEWS_GENERATOR == 'true' }}
         env:
@@ -49,21 +48,29 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python3 news_generator.py
 
+      # ── Commit history（push 失敗會讓 workflow 變紅，不再偽裝成功）──
       - name: Commit history
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add history/ -f
-          git diff --cached --quiet || git commit -m "更新篩選紀錄 $(TZ=Asia/Taipei date +%Y%m%d)"
-          git push || echo "Nothing to push"
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "更新篩選紀錄 $(TZ=Asia/Taipei date +%Y%m%d)"
+            # push 前先 pull --rebase 避免 race condition
+            git pull --rebase origin main || true
+            git push
+          fi
 
+      # ── Push to cb-dashboard（同樣讓失敗能被察覺）──
       - name: Push data to cb-dashboard
         env:
           DASHBOARD_TOKEN: ${{ secrets.DASHBOARD_TOKEN }}
         run: |
           if [ -z "$DASHBOARD_TOKEN" ]; then
-            echo "DASHBOARD_TOKEN not set, skipping dashboard push"
-            exit 0
+            echo "::error::DASHBOARD_TOKEN not set"
+            exit 1
           fi
           # Clone dashboard repo
           git clone https://x-access-token:${DASHBOARD_TOKEN}@github.com/dale199707/cb-dashboard.git /tmp/dashboard
@@ -82,5 +89,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/ news/ -f 2>/dev/null || git add data/ -f
-          git diff --cached --quiet || git commit -m "更新資料 $(TZ=Asia/Taipei date +%Y%m%d)"
-          git push || echo "Nothing to push"
+          if git diff --cached --quiet; then
+            echo "Nothing to push to dashboard"
+          else
+            git commit -m "更新資料 $(TZ=Asia/Taipei date +%Y%m%d)"
+            git push
+          fi
