@@ -1,11 +1,53 @@
 {
-  "generated_at": "2026-05-12 12:24:52",
+  "generated_at": "2026-05-13 12:29:07",
   "results": [
     {
-      "code": "82711",
-      "name": "宇瞻一",
-      "url_path": "news/82711.html",
-      "title": "82711 宇瞻一"
+      "code": "49231",
+      "name": "力士一",
+      "url_path": "news/49231.html",
+      "title": "49231 力士一"
+    },
+    {
+      "code": "37171",
+      "name": "聯嘉投控一",
+      "url_path": "news/37171.html",
+      "title": "37171 聯嘉投控一"
+    },
+    {
+      "code": "24642",
+      "name": "盟立二",
+      "url_path": "news/24642.html",
+      "title": "24642 盟立二"
+    },
+    {
+      "code": "37023",
+      "name": "大聯大三",
+      "url_path": "news/37023.html",
+      "title": "37023 大聯大三"
+    },
+    {
+      "code": "64145",
+      "name": "樺漢五",
+      "url_path": "news/64145.html",
+      "title": "64145 樺漢五"
+    },
+    {
+      "code": "37022",
+      "name": "大聯大二",
+      "url_path": "news/37022.html",
+      "title": "37022 大聯大二"
+    },
+    {
+      "code": "37151",
+      "name": "定穎投控一",
+      "url_path": "news/37151.html",
+      "title": "37151 定穎投控一"
+    },
+    {
+      "code": "36805",
+      "name": "家登五",
+      "url_path": "news/36805.html",
+      "title": "36805 家登五"
     }
   ]
 }
