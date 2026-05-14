@@ -1,53 +1,41 @@
 {
-  "generated_at": "2026-05-13 12:29:07",
+  "generated_at": "2026-05-14 12:12:39",
   "results": [
     {
-      "code": "49231",
-      "name": "力士一",
-      "url_path": "news/49231.html",
-      "title": "49231 力士一"
+      "code": "66292",
+      "name": "泰金二KY",
+      "url_path": "news/66292.html",
+      "title": "66292 泰金二KY"
     },
     {
-      "code": "37171",
-      "name": "聯嘉投控一",
-      "url_path": "news/37171.html",
-      "title": "37171 聯嘉投控一"
+      "code": "53096",
+      "name": "系統電六",
+      "url_path": "news/53096.html",
+      "title": "53096 系統電六"
     },
     {
-      "code": "24642",
-      "name": "盟立二",
-      "url_path": "news/24642.html",
-      "title": "24642 盟立二"
+      "code": "34163",
+      "name": "融程電三",
+      "url_path": "news/34163.html",
+      "title": "34163 融程電三"
     },
     {
-      "code": "37023",
-      "name": "大聯大三",
-      "url_path": "news/37023.html",
-      "title": "37023 大聯大三"
+      "code": "80746",
+      "name": "鉅橡六",
+      "url_path": "news/80746.html",
+      "title": "80746 鉅橡六"
     },
     {
-      "code": "64145",
-      "name": "樺漢五",
-      "url_path": "news/64145.html",
-      "title": "64145 樺漢五"
+      "code": "82551",
+      "name": "朋程一",
+      "url_path": "news/82551.html",
+      "title": "82551 朋程一"
     },
     {
-      "code": "37022",
-      "name": "大聯大二",
-      "url_path": "news/37022.html",
-      "title": "37022 大聯大二"
-    },
-    {
-      "code": "37151",
-      "name": "定穎投控一",
-      "url_path": "news/37151.html",
-      "title": "37151 定穎投控一"
-    },
-    {
-      "code": "36805",
-      "name": "家登五",
-      "url_path": "news/36805.html",
-      "title": "36805 家登五"
+      "code": "65152",
+      "name": "穎崴二",
+      "url_path": "news/65152.html",
+      "title": "65152 穎崴二"
     }
   ]
 }
