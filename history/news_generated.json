@@ -1,23 +1,17 @@
 {
-  "generated_at": "2026-05-21 13:44:17",
+  "generated_at": "2026-05-24 11:48:47",
   "results": [
     {
-      "code": "41684",
-      "name": "醣聯四",
-      "url_path": "news/41684.html",
-      "title": "41684 醣聯四"
+      "code": "37023",
+      "name": "大聯大三",
+      "url_path": "news/37023.html",
+      "title": "37023 大聯大三"
     },
     {
-      "code": "69131",
-      "name": "鴻呈一",
-      "url_path": "news/69131.html",
-      "title": "69131 鴻呈一"
-    },
-    {
-      "code": "36806",
-      "name": "家登六",
-      "url_path": "news/36806.html",
-      "title": "36806 家登六"
+      "code": "37022",
+      "name": "大聯大二",
+      "url_path": "news/37022.html",
+      "title": "37022 大聯大二"
     }
   ]
 }
