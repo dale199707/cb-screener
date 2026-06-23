@@ -1,35 +1,11 @@
 {
-  "generated_at": "2026-06-22 15:37:22",
+  "generated_at": "2026-06-23 13:23:17",
   "results": [
     {
-      "code": "61012",
-      "name": "寬魚國際二",
-      "url_path": "news/61012.html",
-      "title": "61012 寬魚國際二"
-    },
-    {
-      "code": "30455",
-      "name": "台灣大五",
-      "url_path": "news/30455.html",
-      "title": "30455 台灣大五"
-    },
-    {
-      "code": "82711",
-      "name": "宇瞻一",
-      "url_path": "news/82711.html",
-      "title": "82711 宇瞻一"
-    },
-    {
-      "code": "33035",
-      "name": "岱稜五",
-      "url_path": "news/33035.html",
-      "title": "33035 岱稜五"
-    },
-    {
-      "code": "35513",
-      "name": "世禾三",
-      "url_path": "news/35513.html",
-      "title": "35513 世禾三"
+      "code": "62696",
+      "name": "台郡六",
+      "url_path": "news/62696.html",
+      "title": "62696 台郡六"
     },
     {
       "code": "62695",
@@ -38,16 +14,46 @@
       "title": "62695 台郡五"
     },
     {
-      "code": "62696",
-      "name": "台郡六",
-      "url_path": "news/62696.html",
-      "title": "62696 台郡六"
+      "code": "37151",
+      "name": "定穎投控一",
+      "url_path": "news/37151.html",
+      "title": "37151 定穎投控一"
     },
     {
-      "code": "54642",
-      "name": "霖宏二",
-      "url_path": "news/54642.html",
-      "title": "54642 霖宏二"
+      "code": "33571",
+      "name": "臺慶科一",
+      "url_path": "news/33571.html",
+      "title": "33571 臺慶科一"
+    },
+    {
+      "code": "811210",
+      "name": "至上十",
+      "url_path": "news/811210.html",
+      "title": "811210 至上十"
+    },
+    {
+      "code": "66034",
+      "name": "富強鑫四",
+      "url_path": "news/66034.html",
+      "title": "66034 富強鑫四"
+    },
+    {
+      "code": "82551",
+      "name": "朋程一",
+      "url_path": "news/82551.html",
+      "title": "82551 朋程一"
+    },
+    {
+      "code": "14723",
+      "name": "三洋實業三",
+      "url_path": "news/14723.html",
+      "title": "14723 三洋實業三"
+    },
+    {
+      "code": "31312",
+      "name": "弘塑二",
+      "url_path": "news/31312.html",
+      "title": "31312 弘塑二"
     }
   ]
 }
