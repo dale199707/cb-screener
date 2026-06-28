@@ -1,17 +1,23 @@
 {
-  "generated_at": "2026-06-25 12:38:17",
+  "generated_at": "2026-06-28 12:02:20",
   "results": [
     {
-      "code": "35872",
-      "name": "閎康二",
-      "url_path": "news/35872.html",
-      "title": "35872 閎康二"
+      "code": "54501",
+      "name": "南良一",
+      "url_path": "news/54501.html",
+      "title": "54501 南良一"
     },
     {
-      "code": "24673",
-      "name": "志聖三",
-      "url_path": "news/24673.html",
-      "title": "24673 志聖三"
+      "code": "54642",
+      "name": "霖宏二",
+      "url_path": "news/54642.html",
+      "title": "54642 霖宏二"
+    },
+    {
+      "code": "31312",
+      "name": "弘塑二",
+      "url_path": "news/31312.html",
+      "title": "31312 弘塑二"
     }
   ]
 }
