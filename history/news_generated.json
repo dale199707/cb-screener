@@ -1,41 +1,17 @@
 {
-  "generated_at": "2026-07-01 13:17:44",
+  "generated_at": "2026-07-02 12:27:21",
   "results": [
     {
-      "code": "370201",
-      "name": "大聯大E1",
-      "url_path": "news/370201.html",
-      "title": "370201 大聯大E1"
+      "code": "65381",
+      "name": "倉和一",
+      "url_path": "news/65381.html",
+      "title": "65381 倉和一"
     },
     {
-      "code": "31352",
-      "name": "凌航二",
-      "url_path": "news/31352.html",
-      "title": "31352 凌航二"
-    },
-    {
-      "code": "67531",
-      "name": "龍德造船一",
-      "url_path": "news/67531.html",
-      "title": "67531 龍德造船一"
-    },
-    {
-      "code": "53096",
-      "name": "系統電六",
-      "url_path": "news/53096.html",
-      "title": "53096 系統電六"
-    },
-    {
-      "code": "68621",
-      "name": "三集瑞一KY",
-      "url_path": "news/68621.html",
-      "title": "68621 三集瑞一KY"
-    },
-    {
-      "code": "52892",
-      "name": "宜鼎二",
-      "url_path": "news/52892.html",
-      "title": "52892 宜鼎二"
+      "code": "24642",
+      "name": "盟立二",
+      "url_path": "news/24642.html",
+      "title": "24642 盟立二"
     }
   ]
 }
