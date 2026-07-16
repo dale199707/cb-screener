@@ -1,13 +1,7 @@
 {
-  "date": "2026-07-15",
-  "count": 1,
-  "codes": [
-    "14664"
-  ],
-  "first_seen": {
-    "14664": "2026-07-15"
-  },
-  "new_ticks_left": {
-    "14664": 0
-  }
+  "date": "2026-07-16",
+  "count": 0,
+  "codes": [],
+  "first_seen": {},
+  "new_ticks_left": {}
 }
