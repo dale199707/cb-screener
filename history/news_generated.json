@@ -1,53 +1,35 @@
 {
-  "generated_at": "2026-07-21 12:09:35",
+  "generated_at": "2026-07-22 12:12:06",
   "results": [
     {
-      "code": "33881",
-      "name": "崇越電一",
-      "url_path": "news/33881.html",
-      "title": "33881 崇越電一"
+      "code": "34793",
+      "name": "安勤三",
+      "url_path": "news/34793.html",
+      "title": "34793 安勤三"
     },
     {
-      "code": "65381",
-      "name": "倉和一",
-      "url_path": "news/65381.html",
-      "title": "65381 倉和一"
+      "code": "66702",
+      "name": "復盛應用二",
+      "url_path": "news/66702.html",
+      "title": "66702 復盛應用二"
     },
     {
-      "code": "30454",
-      "name": "台灣大四",
-      "url_path": "news/30454.html",
-      "title": "30454 台灣大四"
+      "code": "68702",
+      "name": "騰雲二",
+      "url_path": "news/68702.html",
+      "title": "68702 騰雲二"
+    },
+    {
+      "code": "622010",
+      "name": "岳豐十",
+      "url_path": "news/622010.html",
+      "title": "622010 岳豐十"
     },
     {
       "code": "68701",
       "name": "騰雲一",
       "url_path": "news/68701.html",
       "title": "68701 騰雲一"
-    },
-    {
-      "code": "15142",
-      "name": "亞力二",
-      "url_path": "news/15142.html",
-      "title": "15142 亞力二"
-    },
-    {
-      "code": "80963",
-      "name": "擎亞三",
-      "url_path": "news/80963.html",
-      "title": "80963 擎亞三"
-    },
-    {
-      "code": "68621",
-      "name": "三集瑞一KY",
-      "url_path": "news/68621.html",
-      "title": "68621 三集瑞一KY"
-    },
-    {
-      "code": "47224",
-      "name": "國精化四",
-      "url_path": "news/47224.html",
-      "title": "47224 國精化四"
     }
   ]
 }
