@@ -1,47 +1,59 @@
 {
-  "generated_at": "2026-08-06 12:25:52",
+  "generated_at": "2026-08-09 11:03:18",
   "results": [
     {
-      "code": "52091",
-      "name": "新鼎一",
-      "url_path": "news/52091.html",
-      "title": "52091 新鼎一"
+      "code": "34793",
+      "name": "安勤三",
+      "url_path": "news/34793.html",
+      "title": "34793 安勤三"
     },
     {
-      "code": "65472",
-      "name": "高端疫苗二",
-      "url_path": "news/65472.html",
-      "title": "65472 高端疫苗二"
+      "code": "31311",
+      "name": "弘塑一",
+      "url_path": "news/31311.html",
+      "title": "31311 弘塑一"
     },
     {
-      "code": "65381",
-      "name": "倉和一",
-      "url_path": "news/65381.html",
-      "title": "65381 倉和一"
+      "code": "82711",
+      "name": "宇瞻一",
+      "url_path": "news/82711.html",
+      "title": "82711 宇瞻一"
     },
     {
-      "code": "12561",
-      "name": "鮮活果汁一KY",
-      "url_path": "news/12561.html",
-      "title": "12561 鮮活果汁一KY"
+      "code": "30454",
+      "name": "台灣大四",
+      "url_path": "news/30454.html",
+      "title": "30454 台灣大四"
     },
     {
-      "code": "82103",
-      "name": "勤誠三",
-      "url_path": "news/82103.html",
-      "title": "82103 勤誠三"
+      "code": "27271",
+      "name": "王品一",
+      "url_path": "news/27271.html",
+      "title": "27271 王品一"
     },
     {
-      "code": "37151",
-      "name": "定穎投控一",
-      "url_path": "news/37151.html",
-      "title": "37151 定穎投控一"
+      "code": "80506",
+      "name": "廣積六",
+      "url_path": "news/80506.html",
+      "title": "80506 廣積六"
     },
     {
-      "code": "47642",
-      "name": "雙鍵二",
-      "url_path": "news/47642.html",
-      "title": "47642 雙鍵二"
+      "code": "69032",
+      "name": "巨漢二",
+      "url_path": "news/69032.html",
+      "title": "69032 巨漢二"
+    },
+    {
+      "code": "23031",
+      "name": "聯電一",
+      "url_path": "news/23031.html",
+      "title": "23031 聯電一"
+    },
+    {
+      "code": "65843",
+      "name": "南俊國際三",
+      "url_path": "news/65843.html",
+      "title": "65843 南俊國際三"
     }
   ]
 }
