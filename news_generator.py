@@ -3,9 +3,8 @@
 可轉債新聞整理器
 - 讀取 cb_screener.py 產生的 new_for_news.json（當日新上榜 CB 清單）
 - 針對每檔新 CB 抓近期新聞（Google News + TWSE 重訊）
-- 用 OpenAI GPT-4o 產生結構化摘要
+- 用 OpenAI GPT-4o 依新聞與重訊標題產生結構化摘要
 - 輸出 HTML 頁面到 cb-dashboard/news/{code}.html
-- 回傳新聞連結清單給 main，供 Telegram 推播使用
 
 Usage:
     python3 news_generator.py                 # 正式執行
@@ -20,11 +19,13 @@ import re
 import sys
 import time
 from datetime import datetime, timedelta
-from pathlib import Path
 from urllib.parse import quote
 from xml.etree import ElementTree as ET
+from zoneinfo import ZoneInfo
 
 import requests
+
+from line_notifier import send_line_message
 
 
 # ═══════════════════════════════════════════
@@ -34,6 +35,7 @@ NEW_FOR_NEWS_FILE = os.path.join("history", "new_for_news.json")
 NEWS_OUTPUT_DIR = os.path.join("news_out")  # 相對於後端執行目錄（之後由 workflow 複製到前端 repo）
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_MODEL = "gpt-4o"
+TAIPEI_TZ = ZoneInfo("Asia/Taipei")
 
 # 每篇最多丟多少字給 GPT（控制成本）
 MAX_NEWS_CHARS = 8000
@@ -45,6 +47,22 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                   "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
 }
+
+
+def now_taipei() -> datetime:
+    return datetime.now(TAIPEI_TZ)
+
+
+SUMMARY_KEYS = ("overall", "financial", "management", "business", "risks")
+
+
+def validate_summary(summary: dict) -> dict:
+    if not isinstance(summary, dict):
+        raise ValueError("摘要不是 JSON object")
+    missing = [key for key in SUMMARY_KEYS if not isinstance(summary.get(key), str)]
+    if missing:
+        raise ValueError(f"摘要缺少文字欄位: {', '.join(missing)}")
+    return {key: summary[key].strip() for key in SUMMARY_KEYS}
 
 
 # ═══════════════════════════════════════════
@@ -121,7 +139,7 @@ def fetch_google_news(query: str, days: int = NEWS_WINDOW_DAYS, limit: int = 20)
 def fetch_twse_material_info(stock_code: str, days: int = NEWS_WINDOW_DAYS) -> list:
     """從公開資訊觀測站抓重大訊息，回傳 [{title, date, ...}, ...]"""
     url = "https://mops.twse.com.tw/mops/web/ajax_t05st01"
-    end_date = datetime.now()
+    end_date = now_taipei()
     start_date = end_date - timedelta(days=days)
 
     data = {
@@ -198,14 +216,14 @@ def summarize_with_openai(
         f"到期日 {cb_info.get('到期日', '-')}"
     )
 
-    system_prompt = """你是專業財經分析師，負責幫可轉債投資人整理公司近況。
+    system_prompt = """你是財經資訊整理員，負責幫可轉債研究者整理公司近況。
 要求：
-1. 只根據提供的新聞和重訊，不要編造
-2. 專注四個面向：財報/月營收表現、公司派動向（法說會、大股東動向）、業務與轉投資、可能風險
-3. 每個面向 2-4 句話，白話中文
-4. 若某面向沒有相關資料，直接寫「無近期相關訊息」
-5. 語氣客觀，不做買賣建議
-6. 輸出必須是有效的 JSON"""
+1. 輸入只有新聞標題與重訊標題，不是完整文章；只能描述標題明確支持的內容
+2. 不得把標題推測當成已確認事實，不得補寫標題未提供的數字、原因或影響
+3. 專注四個面向：財報/月營收表現、公司派動向（法說會、大股東動向）、業務與轉投資、可能風險
+4. 每個面向 2-4 句話，白話中文
+5. 若某面向沒有明確標題支持，直接寫「無近期相關訊息」
+6. 語氣客觀，不做買賣建議"""
 
     user_prompt = f"""請分析以下公司的近期狀況：
 
@@ -226,6 +244,15 @@ def summarize_with_openai(
   "risks": "可能風險提醒（1-3 句，無則寫「暫無明顯風險訊號」）"
 }}"""
 
+    summary_schema = {
+        "type": "object",
+        "properties": {
+            key: {"type": "string"} for key in SUMMARY_KEYS
+        },
+        "required": list(SUMMARY_KEYS),
+        "additionalProperties": False,
+    }
+
     payload = {
         "model": OPENAI_MODEL,
         "messages": [
@@ -234,6 +261,14 @@ def summarize_with_openai(
         ],
         "temperature": 0.3,
         "max_tokens": 1500,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "cb_news_summary",
+                "strict": True,
+                "schema": summary_schema,
+            },
+        },
     }
 
     try:
@@ -253,7 +288,7 @@ def summarize_with_openai(
         content = re.sub(r"^```(?:json)?\s*", "", content.strip())
         content = re.sub(r"\s*```$", "", content)
 
-        return json.loads(content)
+        return validate_summary(json.loads(content))
     except Exception as e:
         print(f"  [錯誤] OpenAI 呼叫失敗: {e}")
         return {
@@ -376,7 +411,7 @@ def render_html(
 
 <header>
   <h1><span class="cb-code">{cb_code}</span> {esc(cb_name)}<span class="sub">· 股票代號 {stock_code} {esc(company_name)}</span></h1>
-  <div class="meta-line">新聞整理生成於 {generated_at}</div>
+  <div class="meta-line">依公開新聞與重訊標題整理 · 生成於 {generated_at}</div>
 </header>
 
 <div class="cb-info">
@@ -420,11 +455,11 @@ def render_html(
 </section>
 
 <div class="disclaimer">
-  本頁摘要由 AI 依公開新聞生成，僅供研究參考，不構成投資建議。實際投資決策請參考原始資料並自行判斷。
+  本頁摘要由 AI 依公開新聞及重大訊息的標題生成，未讀取完整文章內容；僅供研究索引，不構成投資建議。請點閱來源並核對原文。
 </div>
 
 <footer>
-  資料來源：Google News · 公開資訊觀測站 · OpenAI {OPENAI_MODEL} 摘要<br>
+  資料索引：Google News · 公開資訊觀測站 · OpenAI {OPENAI_MODEL} 結構化摘要<br>
   生成時間：{generated_at}
 </footer>
 </body>
@@ -436,14 +471,54 @@ def render_html(
 # ═══════════════════════════════════════════
 #  6. 主流程
 # ═══════════════════════════════════════════
-def load_new_codes() -> list:
-    """讀取 cb_screener.py 寫入的當日新增 CB 清單"""
+def load_news_queue() -> tuple[str | None, list]:
+    """讀取 cb_screener.py 寫入的新增 CB 清單與資料日期。"""
     if not os.path.exists(NEW_FOR_NEWS_FILE):
         print(f"[資訊] 找不到 {NEW_FOR_NEWS_FILE}，無新 CB 需要處理")
-        return []
+        return None, []
     with open(NEW_FOR_NEWS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
-    return data.get("items", [])
+    return data.get("date"), data.get("items", [])
+
+
+def load_generation_state() -> dict:
+    path = os.path.join("history", "news_generated.json")
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def annotate_news_links() -> int:
+    """只在新聞 HTML 確實存在時，將連結寫入 latest 與對應 daily 快照。"""
+    latest_path = os.path.join("history", "latest.json")
+    if not os.path.exists(latest_path):
+        return 0
+    with open(latest_path, "r", encoding="utf-8") as f:
+        latest = json.load(f)
+
+    linked = 0
+    for strategy_name, strategy_data in latest.get("strategies", {}).items():
+        for row in strategy_data.get("data", []):
+            code = str(row.get("代號", ""))
+            link = f"news/{code}.html"
+            exists = bool(code) and os.path.exists(os.path.join(NEWS_OUTPUT_DIR, f"{code}.html"))
+            row["新聞連結"] = link if exists else None
+            linked += int(exists)
+
+        daily_path = os.path.join(
+            "history", "daily", f"{strategy_data.get('date')}_{strategy_name}.json"
+        )
+        if os.path.exists(daily_path):
+            with open(daily_path, "w", encoding="utf-8") as f:
+                json.dump(strategy_data, f, ensure_ascii=False, indent=2)
+
+    with open(latest_path, "w", encoding="utf-8") as f:
+        json.dump(latest, f, ensure_ascii=False, indent=2)
+    return linked
 
 
 def process_cb(item: dict, api_key: str, dry_run: bool = False) -> dict:
@@ -453,7 +528,7 @@ def process_cb(item: dict, api_key: str, dry_run: bool = False) -> dict:
     stock_code = str(item.get("股票代號") or cb_code_to_stock(cb_code))
 
     # 公司名（從 CB 名稱去掉末字如「三」「二」等）
-    company_name = re.sub(r"[一二三四五六七八九十]+$", "", cb_name).strip()
+    company_name = re.sub(r"[一二三四五六七八九十]+(?=(?:KY|-KY)?$)", "", cb_name).strip()
     if not company_name:
         company_name = cb_name
 
@@ -503,7 +578,7 @@ def process_cb(item: dict, api_key: str, dry_run: bool = False) -> dict:
         )
 
     # 產生 HTML
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    generated_at = now_taipei().strftime("%Y-%m-%d %H:%M:%S %Z")
     html = render_html(
         cb_code, cb_name, stock_code, company_name, cb_info,
         summary, news, material, generated_at,
@@ -524,37 +599,15 @@ def process_cb(item: dict, api_key: str, dry_run: bool = False) -> dict:
     }
 
 
-def send_telegram_summary(results: list, bot_token: str, chat_id: str, base_url: str):
-    """新聞生成完後，發一則彙總 Telegram"""
-    if not results:
-        return
-    if not base_url.endswith("/"):
-        base_url += "/"
-
-    lines = [
-        "📰 *今日新上榜 CB — 新聞整理*",
-        f"📅 {datetime.now().strftime('%Y/%m/%d')}",
-        "─" * 24,
-    ]
-    for r in results:
-        url = base_url + r["url_path"]
-        lines.append(f"🔗 [{r['title']}]({url})")
-    lines.append("")
-    lines.append("_點連結查看公司基本面 + 近期新聞摘要_")
-    msg = "\n".join(lines)
-
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    try:
-        resp = requests.post(url, json={
-            "chat_id": chat_id, "text": msg,
-            "parse_mode": "Markdown", "disable_web_page_preview": True,
-        }, timeout=10)
-        if resp.status_code == 200:
-            print(f"  [通知] Telegram 新聞彙總已發送（{len(results)} 檔）")
-        else:
-            print(f"  [錯誤] Telegram 失敗: {resp.text}")
-    except Exception as e:
-        print(f"  [錯誤] Telegram 連線失敗: {e}")
+def format_line_news_summary(results: list, base_url: str) -> str:
+    """產生不含 Markdown 語法的 LINE 新聞摘要。"""
+    base_url = base_url.rstrip("/") + "/"
+    lines = [f"📰 新聞整理完成（{len(results)} 檔）", ""]
+    for result in results:
+        lines.append(result["title"])
+        lines.append(f"🔗 {base_url}{result['url_path']}")
+    lines.extend(["", "點連結查看公司基本面與近期新聞摘要"])
+    return "\n".join(lines)
 
 
 def main():
@@ -562,14 +615,16 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="不呼叫 OpenAI")
     parser.add_argument("--code", default=None, help="只處理特定 CB 代號")
     parser.add_argument("--api-key", default=None, help="OpenAI API key（預設讀環境變數）")
-    parser.add_argument("--no-telegram", action="store_true", help="不發 Telegram")
-    parser.add_argument("--dashboard-url", default="https://dale199707.github.io/cb-dashboard/",
-                        help="Dashboard 網址，用於組新聞連結")
+    parser.add_argument(
+        "--dashboard-url",
+        default="https://dale199707.github.io/cb-dashboard/",
+        help="Dashboard 網址，用於 LINE 新聞連結",
+    )
     args = parser.parse_args()
 
     print("=" * 44)
     print("  可轉債新聞整理器")
-    print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  {now_taipei().strftime('%Y-%m-%d %H:%M:%S %Z')}")
     print("=" * 44)
 
     # API key
@@ -599,17 +654,32 @@ def main():
             print(f"[錯誤] latest.json 中找不到代號 {args.code}")
             sys.exit(1)
         items = [item]
+        source_date = latest.get("date")
     else:
-        items = load_new_codes()
+        source_date, items = load_news_queue()
 
     if not items:
+        linked = annotate_news_links()
+        print(f"[新聞] 已確認 {linked} 筆現有新聞連結")
         print("[完成] 沒有新 CB 需要處理")
         return
 
     print(f"[處理] 共 {len(items)} 檔 CB 待整理")
 
+    previous = load_generation_state()
+    previous_results = {
+        str(result.get("code")): result
+        for result in previous.get("results", [])
+        if previous.get("source_date") == source_date
+    }
     results = []
     for i, item in enumerate(items):
+        code = str(item.get("代號", ""))
+        existing_page = os.path.join(NEWS_OUTPUT_DIR, f"{code}.html")
+        if code in previous_results and os.path.exists(existing_page):
+            print(f"  [略過] {code} 在 {source_date} 已生成，沿用既有頁面")
+            results.append(previous_results[code])
+            continue
         try:
             result = process_cb(item, api_key, dry_run=args.dry_run)
             results.append(result)
@@ -622,19 +692,24 @@ def main():
     out_summary = os.path.join("history", "news_generated.json")
     with open(out_summary, "w", encoding="utf-8") as f:
         json.dump({
-            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "generated_at": now_taipei().isoformat(timespec="seconds"),
+            "source_date": source_date,
             "results": results,
         }, f, ensure_ascii=False, indent=2)
-    print(f"\n[完成] 共產生 {len(results)} 個新聞頁，清單已存 {out_summary}")
+    linked = annotate_news_links()
+    print(f"\n[完成] 本批共 {len(results)} 個新聞頁；Dashboard 已連結 {linked} 筆")
 
-    # 發 Telegram 彙總
-    if not args.no_telegram and not args.dry_run and results:
-        tg_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-        tg_chat = os.environ.get("TELEGRAM_CHAT_ID", "")
-        if tg_token and tg_chat:
-            send_telegram_summary(results, tg_token, tg_chat, args.dashboard_url)
+    if results and not args.dry_run:
+        line_token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
+        line_user_id = os.environ.get("LINE_USER_ID", "")
+        if line_token and line_user_id:
+            send_line_message(
+                line_token,
+                line_user_id,
+                format_line_news_summary(results, args.dashboard_url),
+            )
         else:
-            print("[警告] 沒有 TELEGRAM_BOT_TOKEN/CHAT_ID，跳過 Telegram 推播")
+            print("[LINE] 尚未完整設定 GitHub Secrets，跳過新聞推播")
 
 
 if __name__ == "__main__":

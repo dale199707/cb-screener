@@ -4,11 +4,10 @@
 - 透過統一證券 CBAS API 一次取得所有可轉債即時資料
   （收盤價、股價、轉換價值、溢價率、成交量、均量等）
 - 支援自訂篩選策略
-- 透過 Telegram Bot 推播結果
+- 產生可供靜態 Dashboard 使用的 JSON 與 CSV
 
 Usage:
     python3 cb_screener.py                  # 正式執行
-    python3 cb_screener.py --dry-run        # 測試模式（不發送 Telegram）
     python3 cb_screener.py --strategy 可轉債資優生
 """
 
@@ -16,12 +15,22 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
 import yaml
+
+from line_notifier import send_line_message
+
+
+TAIPEI_TZ = ZoneInfo("Asia/Taipei")
+
+
+def now_taipei() -> datetime:
+    return datetime.now(TAIPEI_TZ)
 
 
 # ═══════════════════════════════════════════
@@ -40,9 +49,60 @@ def load_config(config_path="config.yaml"):
 #  2. 從統一證券 CBAS API 取得所有可轉債資料
 # ═══════════════════════════════════════════
 CBAS_API_URL = "https://cbas16889.pscnet.com.tw/api/CbasQuote/GetIssuedCBSchedule"
+REQUIRED_CB_COLUMNS = {
+    "代號", "債券名稱", "股票代號", "到期日", "轉換價格", "標的股價",
+    "債券市價", "轉換價值", "溢價率_raw", "CB成交量", "CB均量5日",
+    "CB均量20日", "create_date",
+}
 
 
-def fetch_cb_data() -> pd.DataFrame:
+def infer_source_date(df: pd.DataFrame) -> date | None:
+    """從 CBAS create_date 推定這批報價所屬日期。"""
+    if "create_date" not in df.columns:
+        return None
+    parsed = pd.to_datetime(df["create_date"], errors="coerce").dropna()
+    if parsed.empty:
+        return None
+    return parsed.dt.date.mode().iloc[0]
+
+
+def validate_cb_data(df: pd.DataFrame, quality_config: dict | None = None) -> dict:
+    """驗證必要欄位、資料量與 CBAS 報價日期，回傳可公開的品質摘要。"""
+    quality_config = quality_config or {}
+    missing = sorted(REQUIRED_CB_COLUMNS - set(df.columns))
+    if missing:
+        raise ValueError(f"CBAS 缺少必要欄位: {', '.join(missing)}")
+
+    min_records = int(quality_config.get("min_records", 100))
+    if len(df) < min_records:
+        raise ValueError(f"CBAS 僅回傳 {len(df)} 筆，低於門檻 {min_records}")
+
+    source_date = infer_source_date(df)
+    warnings = []
+    max_age = int(quality_config.get("max_source_age_days", 7))
+    if source_date is None:
+        raise ValueError("CBAS create_date 無法解析，拒絕以執行日冒充資料日期")
+    else:
+        age_days = (now_taipei().date() - source_date).days
+        if age_days < 0:
+            raise ValueError(f"CBAS 資料日期位於未來: {source_date}")
+        if age_days > max_age:
+            raise ValueError(
+                f"CBAS 資料已過期 {age_days} 天，超過門檻 {max_age} 天"
+            )
+        if age_days > 0:
+            warnings.append(
+                f"目前使用 {source_date} 的最近盤後資料（距執行日 {age_days} 天）"
+            )
+
+    return {
+        "source_date": source_date.isoformat() if source_date else None,
+        "record_count": len(df),
+        "warnings": warnings,
+    }
+
+
+def fetch_cb_data(quality_config: dict | None = None) -> tuple[pd.DataFrame, dict]:
     """一次抓取所有已發行可轉債的即時資料"""
     print("[資料] 正在從統一證券 CBAS API 抓取...")
 
@@ -93,6 +153,7 @@ def fetch_cb_data() -> pd.DataFrame:
         "the_degree_of_price_inside_and_outside": "價內外程度",
     }
     df = df.rename(columns=col_map)
+    quality = validate_cb_data(df, quality_config)
 
     # 數值轉換
     numeric_cols = [
@@ -119,7 +180,7 @@ def fetch_cb_data() -> pd.DataFrame:
             df[col] = pd.to_datetime(df[col], format="%Y/%m/%d", errors="coerce")
 
     # 衍生欄位
-    today = datetime.now()
+    today = pd.Timestamp(now_taipei().date())
     df["到期剩餘天數"] = (df["到期日"] - today).dt.days
     df["股價轉換價比"] = (df["標的股價"] / df["轉換價格"]) - 1
 
@@ -133,7 +194,7 @@ def fetch_cb_data() -> pd.DataFrame:
     df["CB成交量"] = df["CB成交量"].fillna(0).astype(int)
 
     print(f"[資料] 成功取得 {len(df)} 檔可轉債（即時盤後資料）")
-    return df
+    return df, quality
 
 
 # ═══════════════════════════════════════════
@@ -228,11 +289,12 @@ def apply_ma_to_df(df: pd.DataFrame, ma_data: dict) -> pd.DataFrame:
 
     df["MA87"] = df["股票代號"].map(lambda x: ma_data.get(x, {}).get("ma87"))
     df["MA284"] = df["股票代號"].map(lambda x: ma_data.get(x, {}).get("ma284"))
+    df["均線資料完整"] = df["股票代號"].map(lambda x: x in ma_data)
     df["多頭排列"] = df["股票代號"].map(
-        lambda x: ma_data.get(x, {}).get("bullish", True)  # 無資料時保留
+        lambda x: ma_data.get(x, {}).get("bullish", False)
     )
     df["均線上揚"] = df["股票代號"].map(
-        lambda x: ma_data.get(x, {}).get("ma_rising", True)  # 無資料時保留
+        lambda x: ma_data.get(x, {}).get("ma_rising", False)
     )
     df["股價20日高"] = df["股票代號"].map(lambda x: ma_data.get(x, {}).get("stock_high_20d"))
     df["股價收盤"] = df["股票代號"].map(lambda x: ma_data.get(x, {}).get("stock_close"))
@@ -245,7 +307,7 @@ def apply_ma_to_df(df: pd.DataFrame, ma_data: dict) -> pd.DataFrame:
 # ═══════════════════════════════════════════
 HISTORY_DIR = "history"
 CB_PRICES_FILE = os.path.join(HISTORY_DIR, "cb_prices.json")
-CB_PRICES_MAX_DAYS = 30  # 只保留最近 30 個交易日，避免檔案膨脹
+CB_PRICES_MAX_DAYS = 30  # 依 CBAS 資料日期去重，只保留最近 30 個報價日
 
 
 def load_cb_price_history() -> dict:
@@ -259,14 +321,13 @@ def load_cb_price_history() -> dict:
         return {}
 
 
-def update_cb_price_history(df: pd.DataFrame) -> dict:
+def update_cb_price_history(df: pd.DataFrame, snapshot_date: str) -> dict:
     """
-    把今日每檔 CB 的收盤價追加進歷史，只保留最近 CB_PRICES_MAX_DAYS 筆
+    把本批 CB 收盤價依資料日期追加進歷史，只保留最近 CB_PRICES_MAX_DAYS 筆。
+    星期日盤前排程若仍取得星期五資料，會覆蓋星期五而不是新增星期日資料。
     回傳更新後的 history dict（呼叫端可直接用於篩選）
     """
     history = load_cb_price_history()
-    today_str = datetime.now().strftime("%Y-%m-%d")
-
     for _, row in df.iterrows():
         code = str(row.get("代號", ""))
         price = row.get("債券市價")
@@ -277,10 +338,10 @@ def update_cb_price_history(df: pd.DataFrame) -> dict:
         if code not in history:
             history[code] = []
 
-        # 如果今日已存在（例如同日重跑），覆蓋
-        history[code] = [d for d in history[code] if d.get("date") != today_str]
+        # 相同資料日期（例如同日重跑或星期日讀星期五資料）只覆蓋
+        history[code] = [d for d in history[code] if d.get("date") != snapshot_date]
         history[code].append({
-            "date": today_str,
+            "date": snapshot_date,
             "close": round(float(price), 2),
             "vol": int(vol) if pd.notna(vol) else 0,
         })
@@ -314,6 +375,7 @@ def apply_cb_history_to_df(df: pd.DataFrame, history: dict, window: int) -> pd.D
     cb_high_list = []
     cb_is_high_list = []
     cb_vol_ratio_list = []
+    cb_history_count_list = []
 
     for _, row in df.iterrows():
         code = str(row.get("代號", ""))
@@ -321,6 +383,7 @@ def apply_cb_history_to_df(df: pd.DataFrame, history: dict, window: int) -> pd.D
         today_vol = row.get("CB成交量", 0)
 
         hist = history.get(code, [])
+        cb_history_count_list.append(len(hist))
         # 取過去 window 天（含今日）
         recent = hist[-window:] if len(hist) >= 2 else hist
         closes = [d["close"] for d in recent]
@@ -345,6 +408,7 @@ def apply_cb_history_to_df(df: pd.DataFrame, history: dict, window: int) -> pd.D
     df["CB20日高"] = cb_high_list
     df["CB創20日高"] = cb_is_high_list
     df["CB放量倍數"] = cb_vol_ratio_list
+    df["CB歷史筆數"] = cb_history_count_list
 
     return df
 
@@ -363,40 +427,54 @@ def register_filter(name):
 
 
 @register_filter("可轉債資優生")
-def filter_cb_honor(df):
+def filter_cb_honor(df, strategy=None):
     """
     CB市價 103~150
     且（股價在轉換價 -20%~+30% 或 CB市價 > 轉換價值）
     CB 5日均量 > 20
     """
-    mask_price = (df["債券市價"] > 103) & (df["債券市價"] < 150)
-    mask_stock = (df["股價轉換價比"] >= -0.20) & (df["股價轉換價比"] <= 0.30)
+    params = (strategy or {}).get("params", {})
+    cb_min = params.get("cb_price_min_exclusive", 103)
+    cb_max = params.get("cb_price_max_exclusive", 150)
+    ratio_min = params.get("stock_conversion_ratio_min", -0.20)
+    ratio_max = params.get("stock_conversion_ratio_max", 0.30)
+    min_avg5 = params.get("min_avg_volume_5d_exclusive", 20)
+
+    mask_price = (df["債券市價"] > cb_min) & (df["債券市價"] < cb_max)
+    mask_stock = (df["股價轉換價比"] >= ratio_min) & (df["股價轉換價比"] <= ratio_max)
     mask_cv = df["債券市價"] > df["轉換價值"]
 
     result = df[mask_price & (mask_stock | mask_cv)]
-    result = result[result["CB均量"] > 20]
+    result = result[result["CB均量"] > min_avg5]
     return result
 
 
 @register_filter("突破轉換價")
-def filter_breakthrough(df):
+def filter_breakthrough(df, strategy=None):
     """
     CB收盤價 > 轉換價值 且溢價率 < 5%
     股價 > 轉換價格 0%~10%
     CB 5日均量 > 50
     CB 日成交量 > 150 張
     """
-    mask_premium = (df["債券市價"] > df["轉換價值"]) & (df["溢價率"] < 0.05)
-    mask_stock = (df["股價轉換價比"] > 0) & (df["股價轉換價比"] < 0.10)
-    mask_vol = df["CB成交量"] > 150
-    mask_avg = df["CB均量"] > 50
+    params = (strategy or {}).get("params", {})
+    max_premium = params.get("max_premium_exclusive", 0.05)
+    ratio_min = params.get("stock_conversion_ratio_min_exclusive", 0)
+    ratio_max = params.get("stock_conversion_ratio_max_exclusive", 0.10)
+    min_volume = params.get("min_daily_volume_exclusive", 150)
+    min_avg5 = params.get("min_avg_volume_5d_exclusive", 50)
+
+    mask_premium = (df["債券市價"] > df["轉換價值"]) & (df["溢價率"] < max_premium)
+    mask_stock = (df["股價轉換價比"] > ratio_min) & (df["股價轉換價比"] < ratio_max)
+    mask_vol = df["CB成交量"] > min_volume
+    mask_avg = df["CB均量"] > min_avg5
 
     result = df[mask_premium & mask_stock & mask_vol & mask_avg]
     return result
 
 
 @register_filter("領先創高")
-def filter_leader(df):
+def filter_leader(df, strategy=None):
     """
     可轉債領先股價創高（領先訊號）：
     1. CB 今日收盤 = 累積窗口內最高（= 創窗口新高）
@@ -408,46 +486,57 @@ def filter_leader(df):
     if "CB創20日高" not in df.columns:
         return df.iloc[0:0]  # 空 DataFrame
 
+    params = (strategy or {}).get("params", {})
+    stock_high_ratio = params.get("stock_below_high_ratio", 0.98)
+    min_vol_ratio = params.get("min_volume_ratio", 1.3)
+    min_avg5 = params.get("min_avg_volume_5d", 20)
+    min_history = int((strategy or {}).get("min_history_days", 5))
+
     # 條件 1：CB 創窗口高
     mask_cb_high = df["CB創20日高"] == True
 
-    # 條件 2：股票未創高（stock_high_20d 存在才判斷，沒資料保留）
+    # 條件 2：股票未創高；缺少 yfinance 資料時不納入訊號
     stock_high = df["股價20日高"]
     stock_close = df["股價收盤"]
-    # 如果 yfinance 抓不到股票資料，保留（給 benefit of doubt）
-    mask_stock = stock_high.isna() | stock_close.isna() | (stock_close < stock_high * 0.98)
+    mask_stock = stock_high.notna() & stock_close.notna() & (stock_close < stock_high * stock_high_ratio)
 
     # 條件 3：CB 放量倍數 >= 1.3
     vol_ratio = df["CB放量倍數"].fillna(0)
-    mask_vol = vol_ratio >= 1.3
+    mask_vol = vol_ratio >= min_vol_ratio
 
     # 條件 4：CB 流動性
-    mask_liq = df["CB均量5日"].fillna(0) >= 20
+    mask_liq = df["CB均量5日"].fillna(0) >= min_avg5
 
-    result = df[mask_cb_high & mask_stock & mask_vol & mask_liq]
+    # 條件 5：每一檔 CB 自己都必須具備足夠歷史，不使用全市場最大深度代替
+    mask_history = df["CB歷史筆數"].fillna(0) >= min_history
+
+    result = df[mask_cb_high & mask_stock & mask_vol & mask_liq & mask_history]
     return result
 
 
-def apply_strategy(df, strategy, strategy_name=""):
+def apply_strategy(df, strategy, strategy_name="", global_filters=None):
     result = df.copy()
+    global_filters = global_filters or {}
 
-    # 全域條件 1：CB 當日成交量 ≥ 10
+    # 全域條件 1：CB 當日成交量
+    min_cb_volume = global_filters.get("min_cb_volume", 10)
     before_global = len(result)
-    result = result[result["CB成交量"] >= 10]
+    result = result[result["CB成交量"] >= min_cb_volume]
     after_global = len(result)
     if before_global != after_global:
-        print(f"    CB成交量≥10: {before_global} → {after_global}")
+        print(f"    CB成交量≥{min_cb_volume}: {before_global} → {after_global}")
 
     # 全域條件 2：均線多頭（87MA > 284MA）
     before_ma = len(result)
-    result = result[result["多頭排列"]]
+    if global_filters.get("require_bullish_ma", True):
+        result = result[result["均線資料完整"] & result["多頭排列"]]
     after_ma = len(result)
     if before_ma != after_ma:
         print(f"    均線多頭(87MA>284MA): {before_ma} → {after_ma}")
 
     if strategy_name in CUSTOM_FILTERS:
         before = len(result)
-        result = CUSTOM_FILTERS[strategy_name](result)
+        result = CUSTOM_FILTERS[strategy_name](result, strategy)
         after = len(result)
         print(f"    自訂篩選: {before} → {after}")
     else:
@@ -507,7 +596,7 @@ def load_history(strategy_name: str) -> dict:
         return {"first_seen": {}, "codes": [], "new_ticks_left": {}}
 
 
-def determine_new_tags(current_codes: list, prev_history: dict) -> tuple:
+def determine_new_tags(current_codes: list, prev_history: dict, snapshot_date: str) -> tuple:
     """
     🆕 以「交易日 tick」計算：首次上榜當次起，共顯示 NEW_TAG_DAYS 次 Actions 跑的日子。
     （例如 NEW_TAG_DAYS=3 代表從首次上榜跑 screener 起，接下來 3 次都會顯示 🆕）
@@ -520,11 +609,11 @@ def determine_new_tags(current_codes: list, prev_history: dict) -> tuple:
         - 若前次不在（消失後再現） → 視為全新首次上榜，重新開始
     回傳 (new_tags, updated_first_seen, updated_ticks_left)
     """
-    today = datetime.now().date()
-    today_str = today.strftime("%Y-%m-%d")
+    today_str = snapshot_date
     prev_first_seen = prev_history.get("first_seen", {}) or {}
     prev_ticks = prev_history.get("new_ticks_left", {}) or {}
     prev_codes = set(prev_history.get("codes", []) or [])
+    same_snapshot = prev_history.get("date") == snapshot_date
 
     new_tags = {}              # 要顯示 🆕 的 CB: {code: first_seen_date_str}
     updated_first_seen = {}
@@ -542,9 +631,9 @@ def determine_new_tags(current_codes: list, prev_history: dict) -> tuple:
             was_on_list = code in prev_codes
 
             if prev_tick > 0:
-                # 還在 🆕 期，消耗 1 tick
+                # 同一資料日重跑不消耗 tick；新資料日才消耗一次
                 updated_first_seen[code] = prev_date_str
-                updated_ticks_left[code] = prev_tick - 1
+                updated_ticks_left[code] = prev_tick if same_snapshot else prev_tick - 1
                 new_tags[code] = prev_date_str
             elif was_on_list:
                 # 連續上榜但 🆕 已過期 → 不再標
@@ -563,18 +652,19 @@ def save_current_results(strategy_name: str, codes: list,
                          updated_first_seen: dict,
                          updated_ticks_left: dict,
                          new_tags: dict = None,
-                         df: pd.DataFrame = None):
+                         df: pd.DataFrame = None,
+                         snapshot_date: str | None = None):
     """儲存本次篩選結果（代號清單 + 首次上榜日 + ticks + 完整資料 JSON）"""
     if new_tags is None:
         new_tags = {}
     new_tags_codes = set(new_tags.keys())
     os.makedirs(HISTORY_DIR, exist_ok=True)
-    today = datetime.now().strftime("%Y-%m-%d")
+    snapshot_date = snapshot_date or now_taipei().date().isoformat()
 
     # 1) 儲存代號清單 + first_seen + ticks（用於隔日比對）
     path = os.path.join(HISTORY_DIR, f"{strategy_name}.json")
     data = {
-        "date": today,
+        "date": snapshot_date,
         "count": len(codes),
         "codes": codes,
         "first_seen": updated_first_seen,
@@ -583,18 +673,18 @@ def save_current_results(strategy_name: str, codes: list,
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-    # 2) 儲存完整資料（用於前端 / 歷史走勢）
-    if df is not None and not df.empty:
-        daily_dir = os.path.join(HISTORY_DIR, "daily")
-        os.makedirs(daily_dir, exist_ok=True)
-        daily_path = os.path.join(daily_dir, f"{today}_{strategy_name}.json")
+    # 2) 儲存完整資料（包含空結果，確保同資料日重跑能覆蓋舊快照）
+    daily_dir = os.path.join(HISTORY_DIR, "daily")
+    os.makedirs(daily_dir, exist_ok=True)
+    daily_path = os.path.join(daily_dir, f"{snapshot_date}_{strategy_name}.json")
 
+    if df is not None and not df.empty:
         export_cols = [
             "代號", "債券名稱", "股票代號", "有擔保",
             "債券市價", "標的股價", "轉換價格", "轉換價值",
             "溢價率", "CB成交量", "CB均量5日", "CB均量20日",
             "到期日", "TCRI", "MA87", "MA284",
-            "CB20日高", "CB放量倍數", "股價20日高",
+            "CB20日高", "CB放量倍數", "股價20日高", "CB歷史筆數",
         ]
         existing = [c for c in export_cols if c in df.columns]
         df_export = df[existing].copy()
@@ -613,6 +703,8 @@ def save_current_results(strategy_name: str, codes: list,
             rec["首次上榜"] = fs
             # 🆕 旗標：後端直接告訴前端要不要顯示（依交易日 tick 計算）
             rec["是否新上榜"] = ticks >= 0 and code in new_tags_codes
+            news_path = os.path.join("news_out", f"{code}.html")
+            rec["新聞連結"] = f"news/{code}.html" if os.path.exists(news_path) else None
 
         # 清除所有 NaN 和 float('nan')
         import math
@@ -621,38 +713,41 @@ def save_current_results(strategy_name: str, codes: list,
                 if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
                     rec[k] = None
 
-        daily_data = {
-            "date": today,
-            "strategy": strategy_name,
-            "count": len(records),
-            "data": records,
-        }
-        with open(daily_path, "w", encoding="utf-8") as f:
-            json.dump(daily_data, f, ensure_ascii=False, indent=2)
-        print(f"  [歷史] 已存 {daily_path}")
+    else:
+        records = []
+
+    daily_data = {
+        "date": snapshot_date,
+        "strategy": strategy_name,
+        "count": len(records),
+        "data": records,
+    }
+    with open(daily_path, "w", encoding="utf-8") as f:
+        json.dump(daily_data, f, ensure_ascii=False, indent=2)
+    print(f"  [歷史] 已存 {daily_path}")
 
 
 # ═══════════════════════════════════════════
-#  5. 格式化 Telegram 訊息
+#  5. 格式化執行摘要
 # ═══════════════════════════════════════════
-def format_telegram_message(strategy_name, strategy_desc, df, new_tags=None, extra_note=""):
+def format_result_message(strategy_name, strategy_desc, df, new_tags=None, extra_note="", snapshot_date=None):
     """
     new_tags: dict {code: "YYYY-MM-DD"}，裡面有的 code 才標 🆕，日期為首次上榜日
     """
     if new_tags is None:
         new_tags = {}
-    today_str = datetime.now().strftime("%Y/%m/%d")
+    today_str = (snapshot_date or now_taipei().date().isoformat()).replace("-", "/")
     lines = []
-    lines.append(f"📊 *{strategy_name}*")
+    lines.append(f"📊 {strategy_name}")
     if strategy_desc:
-        lines.append(f"_{strategy_desc}_")
+        lines.append(strategy_desc)
     new_count = sum(1 for _, r in df.iterrows() if str(r.get("代號", "")) in new_tags)
     if new_count > 0:
         lines.append(f"📅 {today_str}（篩出 {len(df)} 檔，🆕 {new_count} 檔新增）")
     else:
         lines.append(f"📅 {today_str}（篩出 {len(df)} 檔）")
     if extra_note:
-        lines.append(f"_{extra_note}_")
+        lines.append(extra_note)
     lines.append("─" * 24)
 
     # 新增的排最上面
@@ -693,7 +788,7 @@ def format_telegram_message(strategy_name, strategy_desc, df, new_tags=None, ext
         exp_str = expiry.strftime("%Y/%m/%d") if pd.notna(expiry) else "-"
         ma_str = f"87MA {ma87:.1f} / 284MA {ma284:.1f}" if pd.notna(ma87) and pd.notna(ma284) else ""
 
-        lines.append(f"{emoji} *{code} {name}* {shield}{is_new}")
+        lines.append(f"{emoji} {code} {name} {shield}{is_new}")
         lines.append(f"  CB {bond_price:.2f} ｜溢價率 {premium:+.1%}")
         lines.append(f"  股價 {stock_price:.2f} ｜轉換價 {conv_price:.2f}")
         lines.append(f"  轉換價值 {cv:.2f} ｜到期 {exp_str}")
@@ -717,76 +812,54 @@ def format_telegram_message(strategy_name, strategy_desc, df, new_tags=None, ext
 
 
 # ═══════════════════════════════════════════
-#  5. Telegram
-# ═══════════════════════════════════════════
-def send_telegram(bot_token, chat_id, message):
-    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-    max_len = 4000
-    parts = [message] if len(message) <= max_len else []
-    if not parts:
-        current = ""
-        for line in message.split("\n"):
-            if len(current) + len(line) + 1 > max_len:
-                parts.append(current)
-                current = line
-            else:
-                current += "\n" + line if current else line
-        if current:
-            parts.append(current)
-
-    for i, part in enumerate(parts):
-        try:
-            resp = requests.post(url, json={
-                "chat_id": chat_id, "text": part,
-                "parse_mode": "Markdown", "disable_web_page_preview": True,
-            }, timeout=10)
-            if resp.status_code == 200:
-                print(f"  [通知] Telegram 已發送 ({i+1}/{len(parts)})")
-            else:
-                print(f"  [錯誤] Telegram 失敗: {resp.text}")
-        except requests.exceptions.RequestException as e:
-            print(f"  [錯誤] Telegram 連線失敗: {e}")
-
-
-# ═══════════════════════════════════════════
 #  6. 主程式
 # ═══════════════════════════════════════════
 def main():
     parser = argparse.ArgumentParser(description="可轉債盤後篩選系統 v3")
     parser.add_argument("-c", "--config", default="config.yaml")
-    parser.add_argument("--dry-run", action="store_true", help="不發送 Telegram")
     parser.add_argument("--strategy", default=None, help="只跑特定策略")
     args = parser.parse_args()
 
     print("=" * 44)
     print("  可轉債盤後篩選系統 v3")
-    print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  {now_taipei().strftime('%Y-%m-%d %H:%M:%S %Z')}")
     print("=" * 44)
 
     config = load_config(args.config)
 
-    # 從 CBAS API 取得所有可轉債資料
-    df = fetch_cb_data()
+    # 從 CBAS API 取得並驗證所有可轉債資料
+    try:
+        df, data_quality = fetch_cb_data(config.get("data_quality", {}))
+    except ValueError as e:
+        print(f"[錯誤] 資料品質驗證失敗: {e}")
+        sys.exit(1)
+
+    snapshot_date = data_quality.get("source_date") or now_taipei().date().isoformat()
+    print(f"[資料] 本次報價日期: {snapshot_date}")
+    for warning in data_quality["warnings"]:
+        print(f"[警告] {warning}")
+
+    global_filters = config.get("global_filters", {})
+    min_cb_volume = global_filters.get("min_cb_volume", 10)
 
     # 先用 CB成交量 ≥ 10 預篩（減少需要抓均線的股票數量）
-    df_active = df[df["CB成交量"] >= 10].copy()
+    df_active = df[df["CB成交量"] >= min_cb_volume].copy()
     stock_codes = df_active["股票代號"].unique().tolist()
-    print(f"[均線] CB成交量≥10 的標的股票: {len(stock_codes)} 檔")
+    print(f"[均線] CB成交量≥{min_cb_volume} 的標的股票: {len(stock_codes)} 檔")
 
     # 用 yfinance 計算均線 + 股價 20 日高
     ma_data = fetch_ma_data(stock_codes)
-    if ma_data:
-        df = apply_ma_to_df(df, ma_data)
-    else:
-        df["MA87"] = None
-        df["MA284"] = None
-        df["多頭排列"] = True   # 沒有均線資料時不篩
-        df["均線上揚"] = True
-        df["股價20日高"] = None
-        df["股價收盤"] = None
+    df = apply_ma_to_df(df, ma_data)
+    data_quality["ma_requested"] = len(stock_codes)
+    data_quality["ma_available"] = len(ma_data)
+    data_quality["ma_missing"] = len(stock_codes) - len(ma_data)
+    if data_quality["ma_missing"]:
+        ma_warning = f"{data_quality['ma_missing']} 檔標的缺少完整均線，已排除而非視為通過"
+        data_quality["warnings"].append(ma_warning)
+        print(f"[警告] {ma_warning}")
 
     # 累積 CB 歷史價格（為「領先創高」策略用）
-    cb_history = update_cb_price_history(df)
+    cb_history = update_cb_price_history(df, snapshot_date)
     history_depth = cb_history_depth(cb_history)
     # 窗口 = min(20, 目前累積天數)，最少 2 天才有意義
     window = min(20, history_depth)
@@ -807,15 +880,12 @@ def main():
             print(f"[提示] 可用: {', '.join(strategies.keys())}")
             sys.exit(1)
 
-    tg = config.get("telegram", {})
-    bot_token = tg.get("bot_token", "")
-    chat_id = tg.get("chat_id", "")
-    can_send = (
-        not args.dry_run and bot_token and chat_id
-        and bot_token not in ("YOUR_BOT_TOKEN", "GITHUB_WILL_INJECT")
-    )
-
     output_config = config.get("output", {})
+    line_token = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN", "")
+    line_user_id = os.environ.get("LINE_USER_ID", "")
+    line_configured = bool(line_token and line_user_id)
+    if not line_configured:
+        print("[LINE] 尚未完整設定 GitHub Secrets，本次不推播")
 
     # 收集所有策略的新上榜 CB，供新聞生成器讀取
     all_new_items = {}  # {cb_code: record_dict}
@@ -827,20 +897,16 @@ def main():
         if desc:
             print(f"   {desc}")
 
-        # 「領先創高」需要至少 5 天歷史才有意義
-        min_days = strategy.get("min_history_days", 0)
-        if min_days > 0 and history_depth < min_days:
-            print(f"  [略過] 此策略需要至少 {min_days} 天 CB 歷史資料，目前僅有 {history_depth} 天")
-            # 仍然儲存空結果，讓前端顯示（但 tab 會因 count=0 而自動隱藏）
-            save_current_results(name, [], {}, {}, {}, pd.DataFrame())
-            continue
-
-        df_filtered = apply_strategy(df, strategy, strategy_name=name)
+        df_filtered = apply_strategy(
+            df, strategy, strategy_name=name, global_filters=global_filters
+        )
 
         # 讀取歷史，計算 🆕 標記（以交易日 tick 為準，保留 NEW_TAG_DAYS 次）
         prev_history = load_history(name)
         current_codes = df_filtered["代號"].astype(str).tolist() if not df_filtered.empty else []
-        new_tags, updated_first_seen, updated_ticks_left = determine_new_tags(current_codes, prev_history)
+        new_tags, updated_first_seen, updated_ticks_left = determine_new_tags(
+            current_codes, prev_history, snapshot_date
+        )
 
         # 第一次跑（沒有任何歷史紀錄）時，全部都不標 🆕
         if not prev_history.get("first_seen") and not prev_history.get("codes"):
@@ -854,9 +920,8 @@ def main():
             print(f"  [新增] 🆕 {len(new_tags)} 檔: {', '.join(tagged)}")
 
             # 收集新上榜的 CB 資料給新聞生成器（只保留當天首次上榜的，去重）
-            today_str = datetime.now().strftime("%Y-%m-%d")
             for code, fs_date in new_tags.items():
-                if fs_date != today_str:
+                if fs_date != snapshot_date:
                     continue  # 只處理今天首次上榜的（避免重複生成）
                 if code in all_new_items:
                     continue
@@ -883,21 +948,32 @@ def main():
         if df_filtered.empty:
             print(f"  [結果] 沒有符合條件的可轉債")
             msg = (
-                f"📊 *{name}*\n"
-                f"📅 {datetime.now().strftime('%Y/%m/%d')}\n\n"
+                f"📊 {name}\n"
+                f"📅 {snapshot_date.replace('-', '/')}\n\n"
                 f"沒有符合條件的可轉債"
             )
             if extra_note:
-                msg += f"\n_{extra_note}_"
+                msg += f"\n{extra_note}"
         else:
             print(f"  [結果] 篩選出 {len(df_filtered)} 檔")
-            msg = format_telegram_message(name, desc, df_filtered, new_tags, extra_note)
+            msg = format_result_message(
+                name, desc, df_filtered, new_tags, extra_note, snapshot_date
+            )
 
         # 儲存本次結果（代號 + first_seen + ticks + 完整資料）
-        save_current_results(name, current_codes, updated_first_seen, updated_ticks_left, new_tags, df_filtered)
+        save_current_results(
+            name, current_codes, updated_first_seen, updated_ticks_left,
+            new_tags, df_filtered, snapshot_date
+        )
 
         print()
         print(msg)
+
+        # 延續原通知行為：只有策略有結果時才送，避免每天收到空清單。
+        if line_configured and not df_filtered.empty:
+            send_line_message(line_token, line_user_id, msg)
+        elif line_configured:
+            print("  [LINE] 沒有結果，跳過推播")
 
         # 存 CSV
         if output_config.get("save_csv", False) and not df_filtered.empty:
@@ -914,19 +990,10 @@ def main():
             df_filtered[existing].to_csv(csv_path, index=False, encoding="utf-8-sig")
             print(f"  [輸出] {csv_path}")
 
-        if can_send:
-            # 沒篩到就不發 Telegram（避免每天都收到「沒有符合條件」）
-            if not df_filtered.empty:
-                send_telegram(bot_token, chat_id, msg)
-            else:
-                print("  [通知] 沒有結果，跳過 Telegram")
-        elif args.dry_run:
-            print("  [測試模式] 跳過 Telegram")
-
-    # 儲存今日新上榜的 CB，供 news_generator.py 讀取
+    # 儲存本批資料新上榜的 CB，供 news_generator.py 讀取
     news_queue_path = os.path.join(HISTORY_DIR, "new_for_news.json")
     news_queue_data = {
-        "date": datetime.now().strftime("%Y-%m-%d"),
+        "date": snapshot_date,
         "count": len(all_new_items),
         "items": list(all_new_items.values()),
     }
@@ -937,15 +1004,17 @@ def main():
     # 儲存 latest.json（前端用，包含所有策略的最新結果）
     latest_path = os.path.join(HISTORY_DIR, "latest.json")
     latest_data = {
-        "date": datetime.now().strftime("%Y-%m-%d"),
-        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "date": snapshot_date,
+        "updated_at": now_taipei().isoformat(timespec="seconds"),
+        "timezone": "Asia/Taipei",
         "cb_history_depth": history_depth,
+        "data_quality": data_quality,
         "strategies": {},
     }
     for name, strategy in config.get("strategies", {}).items():
         daily_path = os.path.join(
             HISTORY_DIR, "daily",
-            f"{datetime.now().strftime('%Y-%m-%d')}_{name}.json"
+            f"{snapshot_date}_{name}.json"
         )
         if os.path.exists(daily_path):
             with open(daily_path, "r", encoding="utf-8") as f:

@@ -2,8 +2,9 @@ name: CB Screener
 
 on:
   schedule:
-    # UTC 10:30 = 台灣時間 18:30（CBAS API 約 18:00 更新完）
-    # 週日～四跑，對應隔天交易日（週一～五）
+    # UTC 10:30 = 台灣時間 18:30。
+    # 刻意於週日～四發布，供隔日（週一～五）盤前查看；
+    # 程式會依 CBAS create_date 去重，週日沿用星期五資料時不會多算一個交易日。
     - cron: '30 10 * * 0-4'
   workflow_dispatch:  # 手動觸發
 
@@ -20,23 +21,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Inject Telegram secrets
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          python3 -c "
-          import yaml
-          with open('config.yaml') as f:
-              c = yaml.safe_load(f)
-          import os
-          c['telegram']['bot_token'] = os.environ['TELEGRAM_BOT_TOKEN']
-          c['telegram']['chat_id'] = os.environ['TELEGRAM_CHAT_ID']
-          with open('config.yaml', 'w') as f:
-              yaml.dump(c, f, allow_unicode=True)
-          "
+      - name: Run tests
+        run: python3 -m unittest discover -s tests -v
 
       - name: Run screener
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: python3 cb_screener.py
 
       # ── 新聞整理（只在 ENABLE_NEWS_GENERATOR=true 時啟用）──
@@ -44,8 +35,8 @@ jobs:
         if: ${{ vars.ENABLE_NEWS_GENERATOR == 'true' }}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: python3 news_generator.py
 
       # ── Commit history（push 失敗會讓 workflow 變紅，不再偽裝成功）──
@@ -54,6 +45,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add history/ -f
+          if [ -d "news_out" ]; then
+            git add news_out/ -f
+          fi
           if git diff --cached --quiet; then
             echo "Nothing to commit"
           else

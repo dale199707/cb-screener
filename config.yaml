@@ -3,20 +3,30 @@
 #  資料來源：統一證券 CBAS API（盤後自動更新）
 # ============================================
 
-# --- Telegram Bot ---
-telegram:
-  bot_token: "GITHUB_WILL_INJECT"
-  chat_id: "GITHUB_WILL_INJECT"
+# --- 全域資料品質與篩選條件 ---
+data_quality:
+  min_records: 100
+  # 星期日盤前會沿用星期五盤後資料；長假最多允許 7 天，超過就停止發布。
+  max_source_age_days: 7
+
+global_filters:
+  min_cb_volume: 10
+  require_bullish_ma: true
 
 # --- 篩選策略 ---
-# 自訂策略（有 OR 條件的）寫在 cb_screener.py 的 CUSTOM_FILTERS
-# 簡單 min/max 篩選的寫在這裡的 filters
+# 複合邏輯仍由 cb_screener.py 執行，所有可調門檻集中放在 params。
 strategies:
 
   # ── 可轉債資優生 ──
-  # CB市價 103~150 且（股價在轉換價 -20%~+30% 或 CB市價>轉換價值）+ 5日均量>10
+  # CB市價 103~150 且（股價在轉換價 -20%~+30% 或 CB市價>轉換價值）+ 5日均量>20
   可轉債資優生:
     description: "CB 103~150 且股價接近轉換價或已超過"
+    params:
+      cb_price_min_exclusive: 103
+      cb_price_max_exclusive: 150
+      stock_conversion_ratio_min: -0.20
+      stock_conversion_ratio_max: 0.30
+      min_avg_volume_5d_exclusive: 20
     sort:
       by: "溢價率"
       ascending: true
@@ -25,6 +35,12 @@ strategies:
   # CB>轉換價值(溢價<5%) + 股價突破轉換價0~10% + CB成交>150 + 均量>50
   突破轉換價:
     description: "股價剛突破轉換價，CB有量"
+    params:
+      max_premium_exclusive: 0.05
+      stock_conversion_ratio_min_exclusive: 0
+      stock_conversion_ratio_max_exclusive: 0.10
+      min_daily_volume_exclusive: 150
+      min_avg_volume_5d_exclusive: 50
     sort:
       by: "溢價率"
       ascending: true
@@ -35,6 +51,10 @@ strategies:
   領先創高:
     description: "CB 創新高但股票未創高，疑似主力領先"
     min_history_days: 5
+    params:
+      stock_below_high_ratio: 0.98
+      min_volume_ratio: 1.3
+      min_avg_volume_5d: 20
     sort:
       by: "CB放量倍數"
       ascending: false
