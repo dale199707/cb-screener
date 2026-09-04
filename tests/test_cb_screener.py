@@ -49,43 +49,27 @@ class ScreenerTests(unittest.TestCase):
         )
         self.assertEqual(ticks, {"12345": 1})
 
-    def test_price_history_overwrites_same_source_date(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            price_file = os.path.join(temp_dir, "cb_prices.json")
-            df1 = pd.DataFrame([{"代號": "12345", "債券市價": 101.0, "CB成交量": 10}])
-            df2 = pd.DataFrame([{"代號": "12345", "債券市價": 102.0, "CB成交量": 20}])
-            with patch.object(screener, "HISTORY_DIR", temp_dir), patch.object(
-                screener, "CB_PRICES_FILE", price_file
-            ):
-                screener.update_cb_price_history(df1, "2026-09-04")
-                result = screener.update_cb_price_history(df2, "2026-09-04")
-            self.assertEqual(result["12345"], [
-                {"date": "2026-09-04", "close": 102.0, "vol": 20}
-            ])
-
-    def test_leader_requires_per_bond_history_and_stock_data(self):
-        base = {
-            "CB創20日高": True,
-            "股價20日高": 100.0,
-            "股價收盤": 95.0,
-            "CB放量倍數": 1.5,
-            "CB均量5日": 30.0,
-            "CB歷史筆數": 5,
-        }
+    def test_honor_price_range_is_strictly_above_103_and_below_135(self):
         df = pd.DataFrame([
-            {"代號": "PASS", **base},
-            {"代號": "SHORT", **base, "CB歷史筆數": 4},
-            {"代號": "NO_MA", **base, "股價20日高": None},
+            {"代號": "LOW_EDGE", "債券市價": 103.0},
+            {"代號": "LOW_PASS", "債券市價": 103.01},
+            {"代號": "HIGH_PASS", "債券市價": 134.99},
+            {"代號": "HIGH_EDGE", "債券市價": 135.0},
         ])
-        result = screener.filter_leader(df, {
-            "min_history_days": 5,
+        df["股價轉換價比"] = 0.0
+        df["轉換價值"] = 100.0
+        df["CB均量"] = 21.0
+
+        result = screener.filter_cb_honor(df, {
             "params": {
-                "stock_below_high_ratio": 0.98,
-                "min_volume_ratio": 1.3,
-                "min_avg_volume_5d": 20,
+                "cb_price_min_exclusive": 103,
+                "cb_price_max_exclusive": 135,
+                "stock_conversion_ratio_min": -0.20,
+                "stock_conversion_ratio_max": 0.30,
+                "min_avg_volume_5d_exclusive": 20,
             },
         })
-        self.assertEqual(result["代號"].tolist(), ["PASS"])
+        self.assertEqual(result["代號"].tolist(), ["LOW_PASS", "HIGH_PASS"])
 
     def test_empty_result_overwrites_daily_snapshot(self):
         with tempfile.TemporaryDirectory() as temp_dir:

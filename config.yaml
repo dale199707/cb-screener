@@ -6,7 +6,7 @@
 # --- 全域資料品質與篩選條件 ---
 data_quality:
   min_records: 100
-  # 星期日盤前會沿用星期五盤後資料；長假最多允許 7 天，超過就停止發布。
+  # 星期日執行時可能沿用星期五盤後資料；長假最多允許 7 天，超過就停止發布。
   max_source_age_days: 7
 
 global_filters:
@@ -18,12 +18,12 @@ global_filters:
 strategies:
 
   # ── 可轉債資優生 ──
-  # CB市價 103~150 且（股價在轉換價 -20%~+30% 或 CB市價>轉換價值）+ 5日均量>20
+  # CB市價 103~135 且（股價在轉換價 -20%~+30% 或 CB市價>轉換價值）+ 5日均量>20
   可轉債資優生:
-    description: "CB 103~150 且股價接近轉換價或已超過"
+    description: "CB 103~135 且股價接近轉換價或已超過"
     params:
       cb_price_min_exclusive: 103
-      cb_price_max_exclusive: 150
+      cb_price_max_exclusive: 135
       stock_conversion_ratio_min: -0.20
       stock_conversion_ratio_max: 0.30
       min_avg_volume_5d_exclusive: 20
@@ -44,20 +44,6 @@ strategies:
     sort:
       by: "溢價率"
       ascending: true
-
-  # ── 領先創高 ──
-  # CB 創 20 日新高 + 股票未創高 + CB 放量 1.3x + 5日均量>=20
-  # 需要累積 5 天以上 CB 歷史資料才會啟用
-  領先創高:
-    description: "CB 創新高但股票未創高，疑似主力領先"
-    min_history_days: 5
-    params:
-      stock_below_high_ratio: 0.98
-      min_volume_ratio: 1.3
-      min_avg_volume_5d: 20
-    sort:
-      by: "CB放量倍數"
-      ascending: false
 
 # --- 輸出 ---
 output:
