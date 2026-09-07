@@ -1,54 +1,24 @@
 {
-  "generated_at": "2026-09-06T21:44:55+08:00",
-  "source_date": "2026-09-04",
+  "generated_at": "2026-09-07T23:57:59+08:00",
+  "source_date": "2026-09-07",
   "results": [
     {
-      "code": "89366",
-      "name": "國統六",
-      "url_path": "news/89366.html",
-      "title": "89366 國統六"
+      "code": "30337",
+      "name": "威健七",
+      "url_path": "news/30337.html",
+      "title": "30337 威健七"
     },
     {
-      "code": "23291",
-      "name": "華泰一",
-      "url_path": "news/23291.html",
-      "title": "23291 華泰一"
+      "code": "37151",
+      "name": "定穎投控一",
+      "url_path": "news/37151.html",
+      "title": "37151 定穎投控一"
     },
     {
-      "code": "36173",
-      "name": "碩天三",
-      "url_path": "news/36173.html",
-      "title": "36173 碩天三"
-    },
-    {
-      "code": "23032",
-      "name": "聯電二",
-      "url_path": "news/23032.html",
-      "title": "23032 聯電二"
-    },
-    {
-      "code": "15602",
-      "name": "中砂二",
-      "url_path": "news/15602.html",
-      "title": "15602 中砂二"
-    },
-    {
-      "code": "37152",
-      "name": "定穎投控二",
-      "url_path": "news/37152.html",
-      "title": "37152 定穎投控二"
-    },
-    {
-      "code": "22331",
-      "name": "宇隆一",
-      "url_path": "news/22331.html",
-      "title": "22331 宇隆一"
-    },
-    {
-      "code": "47642",
-      "name": "雙鍵二",
-      "url_path": "news/47642.html",
-      "title": "47642 雙鍵二"
+      "code": "30285",
+      "name": "增你強五",
+      "url_path": "news/30285.html",
+      "title": "30285 增你強五"
     }
   ]
 }
