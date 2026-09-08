@@ -1,24 +1,42 @@
 {
-  "generated_at": "2026-09-07T23:57:59+08:00",
-  "source_date": "2026-09-07",
+  "generated_at": "2026-09-08T22:43:05+08:00",
+  "source_date": "2026-09-08",
   "results": [
     {
-      "code": "30337",
-      "name": "威健七",
-      "url_path": "news/30337.html",
-      "title": "30337 威健七"
+      "code": "66642",
+      "name": "群翊二",
+      "url_path": "news/66642.html",
+      "title": "66642 群翊二"
     },
     {
-      "code": "37151",
-      "name": "定穎投控一",
-      "url_path": "news/37151.html",
-      "title": "37151 定穎投控一"
+      "code": "84732",
+      "name": "山林水二",
+      "url_path": "news/84732.html",
+      "title": "84732 山林水二"
     },
     {
-      "code": "30285",
-      "name": "增你強五",
-      "url_path": "news/30285.html",
-      "title": "30285 增你強五"
+      "code": "15602",
+      "name": "中砂二",
+      "url_path": "news/15602.html",
+      "title": "15602 中砂二"
+    },
+    {
+      "code": "24643",
+      "name": "盟立三",
+      "url_path": "news/24643.html",
+      "title": "24643 盟立三"
+    },
+    {
+      "code": "82103",
+      "name": "勤誠三",
+      "url_path": "news/82103.html",
+      "title": "82103 勤誠三"
+    },
+    {
+      "code": "82102",
+      "name": "勤誠二",
+      "url_path": "news/82102.html",
+      "title": "82102 勤誠二"
     }
   ]
 }
