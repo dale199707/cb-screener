@@ -1,42 +1,60 @@
 {
-  "generated_at": "2026-09-08T22:43:05+08:00",
-  "source_date": "2026-09-08",
+  "generated_at": "2026-09-09T22:45:18+08:00",
+  "source_date": "2026-09-09",
   "results": [
     {
-      "code": "66642",
-      "name": "群翊二",
-      "url_path": "news/66642.html",
-      "title": "66642 群翊二"
+      "code": "30455",
+      "name": "台灣大五",
+      "url_path": "news/30455.html",
+      "title": "30455 台灣大五"
     },
     {
-      "code": "84732",
-      "name": "山林水二",
-      "url_path": "news/84732.html",
-      "title": "84732 山林水二"
+      "code": "34793",
+      "name": "安勤三",
+      "url_path": "news/34793.html",
+      "title": "34793 安勤三"
     },
     {
-      "code": "15602",
-      "name": "中砂二",
-      "url_path": "news/15602.html",
-      "title": "15602 中砂二"
+      "code": "89366",
+      "name": "國統六",
+      "url_path": "news/89366.html",
+      "title": "89366 國統六"
     },
     {
-      "code": "24643",
-      "name": "盟立三",
-      "url_path": "news/24643.html",
-      "title": "24643 盟立三"
+      "code": "49731",
+      "name": "廣穎電通一",
+      "url_path": "news/49731.html",
+      "title": "49731 廣穎電通一"
     },
     {
-      "code": "82103",
-      "name": "勤誠三",
-      "url_path": "news/82103.html",
-      "title": "82103 勤誠三"
+      "code": "30166",
+      "name": "嘉晶六",
+      "url_path": "news/30166.html",
+      "title": "30166 嘉晶六"
     },
     {
-      "code": "82102",
-      "name": "勤誠二",
-      "url_path": "news/82102.html",
-      "title": "82102 勤誠二"
+      "code": "69032",
+      "name": "巨漢二",
+      "url_path": "news/69032.html",
+      "title": "69032 巨漢二"
+    },
+    {
+      "code": "35833",
+      "name": "辛耘三",
+      "url_path": "news/35833.html",
+      "title": "35833 辛耘三"
+    },
+    {
+      "code": "22331",
+      "name": "宇隆一",
+      "url_path": "news/22331.html",
+      "title": "22331 宇隆一"
+    },
+    {
+      "code": "80963",
+      "name": "擎亞三",
+      "url_path": "news/80963.html",
+      "title": "80963 擎亞三"
     }
   ]
 }
