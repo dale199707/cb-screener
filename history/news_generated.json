@@ -1,84 +1,24 @@
 {
-  "generated_at": "2026-09-13T22:34:30+08:00",
-  "source_date": "2026-09-11",
+  "generated_at": "2026-09-15T00:27:11+08:00",
+  "source_date": "2026-09-14",
   "results": [
     {
-      "code": "32191",
-      "name": "倚強科一",
-      "url_path": "news/32191.html",
-      "title": "32191 倚強科一"
+      "code": "22211",
+      "name": "大甲一",
+      "url_path": "news/22211.html",
+      "title": "22211 大甲一"
     },
     {
-      "code": "69571",
-      "name": "裕慶一KY",
-      "url_path": "news/69571.html",
-      "title": "69571 裕慶一KY"
+      "code": "89366",
+      "name": "國統六",
+      "url_path": "news/89366.html",
+      "title": "89366 國統六"
     },
     {
-      "code": "811210",
-      "name": "至上十",
-      "url_path": "news/811210.html",
-      "title": "811210 至上十"
-    },
-    {
-      "code": "811211",
-      "name": "至上11",
-      "url_path": "news/811211.html",
-      "title": "811211 至上11"
-    },
-    {
-      "code": "20344",
-      "name": "允強四",
-      "url_path": "news/20344.html",
-      "title": "20344 允強四"
-    },
-    {
-      "code": "89365",
-      "name": "國統五",
-      "url_path": "news/89365.html",
-      "title": "89365 國統五"
-    },
-    {
-      "code": "65702",
-      "name": "維田二",
-      "url_path": "news/65702.html",
-      "title": "65702 維田二"
-    },
-    {
-      "code": "81553",
-      "name": "博智三",
-      "url_path": "news/81553.html",
-      "title": "81553 博智三"
-    },
-    {
-      "code": "36805",
-      "name": "家登五",
-      "url_path": "news/36805.html",
-      "title": "36805 家登五"
-    },
-    {
-      "code": "24867",
-      "name": "一詮七",
-      "url_path": "news/24867.html",
-      "title": "24867 一詮七"
-    },
-    {
-      "code": "36173",
-      "name": "碩天三",
-      "url_path": "news/36173.html",
-      "title": "36173 碩天三"
-    },
-    {
-      "code": "55362",
-      "name": "聖暉二",
-      "url_path": "news/55362.html",
-      "title": "55362 聖暉二"
-    },
-    {
-      "code": "80963",
-      "name": "擎亞三",
-      "url_path": "news/80963.html",
-      "title": "80963 擎亞三"
+      "code": "67062",
+      "name": "惠特二",
+      "url_path": "news/67062.html",
+      "title": "67062 惠特二"
     }
   ]
 }
