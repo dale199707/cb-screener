@@ -1,24 +1,30 @@
 {
-  "generated_at": "2026-09-15T00:27:11+08:00",
-  "source_date": "2026-09-14",
+  "generated_at": "2026-09-15T23:09:12+08:00",
+  "source_date": "2026-09-15",
   "results": [
     {
-      "code": "22211",
-      "name": "大甲一",
-      "url_path": "news/22211.html",
-      "title": "22211 大甲一"
+      "code": "49675",
+      "name": "十銓五",
+      "url_path": "news/49675.html",
+      "title": "49675 十銓五"
     },
     {
-      "code": "89366",
-      "name": "國統六",
-      "url_path": "news/89366.html",
-      "title": "89366 國統六"
+      "code": "30337",
+      "name": "威健七",
+      "url_path": "news/30337.html",
+      "title": "30337 威健七"
     },
     {
-      "code": "67062",
-      "name": "惠特二",
-      "url_path": "news/67062.html",
-      "title": "67062 惠特二"
+      "code": "30285",
+      "name": "增你強五",
+      "url_path": "news/30285.html",
+      "title": "30285 增你強五"
+    },
+    {
+      "code": "47642",
+      "name": "雙鍵二",
+      "url_path": "news/47642.html",
+      "title": "47642 雙鍵二"
     }
   ]
 }
