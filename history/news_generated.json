@@ -1,42 +1,36 @@
 {
-  "generated_at": "2026-09-22T00:32:57+08:00",
-  "source_date": "2026-09-21",
+  "generated_at": "2026-09-22T23:06:54+08:00",
+  "source_date": "2026-09-22",
   "results": [
     {
-      "code": "89366",
-      "name": "國統六",
-      "url_path": "news/89366.html",
-      "title": "89366 國統六"
+      "code": "811210",
+      "name": "至上十",
+      "url_path": "news/811210.html",
+      "title": "811210 至上十"
     },
     {
-      "code": "31494",
-      "name": "正達四",
-      "url_path": "news/31494.html",
-      "title": "31494 正達四"
+      "code": "31415",
+      "name": "晶宏五",
+      "url_path": "news/31415.html",
+      "title": "31415 晶宏五"
     },
     {
-      "code": "65702",
-      "name": "維田二",
-      "url_path": "news/65702.html",
-      "title": "65702 維田二"
+      "code": "36913",
+      "name": "碩禾三",
+      "url_path": "news/36913.html",
+      "title": "36913 碩禾三"
     },
     {
-      "code": "45415",
-      "name": "晟田五",
-      "url_path": "news/45415.html",
-      "title": "45415 晟田五"
+      "code": "81553",
+      "name": "博智三",
+      "url_path": "news/81553.html",
+      "title": "81553 博智三"
     },
     {
-      "code": "32609",
-      "name": "威剛九",
-      "url_path": "news/32609.html",
-      "title": "32609 威剛九"
-    },
-    {
-      "code": "47224",
-      "name": "國精化四",
-      "url_path": "news/47224.html",
-      "title": "47224 國精化四"
+      "code": "35834",
+      "name": "辛耘四",
+      "url_path": "news/35834.html",
+      "title": "35834 辛耘四"
     }
   ]
 }
