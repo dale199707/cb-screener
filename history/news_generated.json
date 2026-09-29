@@ -1,36 +1,48 @@
 {
-  "generated_at": "2026-09-29T02:13:26+08:00",
-  "source_date": "2026-09-24",
+  "generated_at": "2026-09-30T00:35:58+08:00",
+  "source_date": "2026-09-29",
   "results": [
     {
-      "code": "77131",
-      "name": "威力德生醫一",
-      "url_path": "news/77131.html",
-      "title": "77131 威力德生醫一"
+      "code": "52091",
+      "name": "新鼎一",
+      "url_path": "news/52091.html",
+      "title": "52091 新鼎一"
     },
     {
-      "code": "30455",
-      "name": "台灣大五",
-      "url_path": "news/30455.html",
-      "title": "30455 台灣大五"
+      "code": "30337",
+      "name": "威健七",
+      "url_path": "news/30337.html",
+      "title": "30337 威健七"
     },
     {
-      "code": "34793",
-      "name": "安勤三",
-      "url_path": "news/34793.html",
-      "title": "34793 安勤三"
+      "code": "89366",
+      "name": "國統六",
+      "url_path": "news/89366.html",
+      "title": "89366 國統六"
     },
     {
-      "code": "55344",
-      "name": "長虹四",
-      "url_path": "news/55344.html",
-      "title": "55344 長虹四"
+      "code": "31494",
+      "name": "正達四",
+      "url_path": "news/31494.html",
+      "title": "31494 正達四"
     },
     {
-      "code": "17172",
-      "name": "長興二",
-      "url_path": "news/17172.html",
-      "title": "17172 長興二"
+      "code": "30286",
+      "name": "增你強六",
+      "url_path": "news/30286.html",
+      "title": "30286 增你強六"
+    },
+    {
+      "code": "35181",
+      "name": "柏騰一",
+      "url_path": "news/35181.html",
+      "title": "35181 柏騰一"
+    },
+    {
+      "code": "81553",
+      "name": "博智三",
+      "url_path": "news/81553.html",
+      "title": "81553 博智三"
     }
   ]
 }
