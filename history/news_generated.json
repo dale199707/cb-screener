@@ -1,48 +1,54 @@
 {
-  "generated_at": "2026-10-04T23:28:09+08:00",
-  "source_date": "2026-10-02",
+  "generated_at": "2026-10-08T01:31:17+08:00",
+  "source_date": "2026-10-07",
   "results": [
     {
-      "code": "99332",
-      "name": "中鼎二",
-      "url_path": "news/99332.html",
-      "title": "99332 中鼎二"
+      "code": "49675",
+      "name": "十銓五",
+      "url_path": "news/49675.html",
+      "title": "49675 十銓五"
     },
     {
-      "code": "66034",
-      "name": "富強鑫四",
-      "url_path": "news/66034.html",
-      "title": "66034 富強鑫四"
+      "code": "31414",
+      "name": "晶宏四",
+      "url_path": "news/31414.html",
+      "title": "31414 晶宏四"
     },
     {
-      "code": "61994",
-      "name": "天品四",
-      "url_path": "news/61994.html",
-      "title": "61994 天品四"
+      "code": "61743",
+      "name": "安碁三",
+      "url_path": "news/61743.html",
+      "title": "61743 安碁三"
     },
     {
-      "code": "67062",
-      "name": "惠特二",
-      "url_path": "news/67062.html",
-      "title": "67062 惠特二"
+      "code": "61777",
+      "name": "達麗七",
+      "url_path": "news/61777.html",
+      "title": "61777 達麗七"
     },
     {
-      "code": "30062",
-      "name": "晶豪科二",
-      "url_path": "news/30062.html",
-      "title": "30062 晶豪科二"
+      "code": "62843",
+      "name": "佳邦三",
+      "url_path": "news/62843.html",
+      "title": "62843 佳邦三"
     },
     {
-      "code": "69031",
-      "name": "巨漢一",
-      "url_path": "news/69031.html",
-      "title": "69031 巨漢一"
+      "code": "76311",
+      "name": "聚賢研發一創",
+      "url_path": "news/76311.html",
+      "title": "76311 聚賢研發一創"
     },
     {
-      "code": "47642",
-      "name": "雙鍵二",
-      "url_path": "news/47642.html",
-      "title": "47642 雙鍵二"
+      "code": "37151",
+      "name": "定穎投控一",
+      "url_path": "news/37151.html",
+      "title": "37151 定穎投控一"
+    },
+    {
+      "code": "24867",
+      "name": "一詮七",
+      "url_path": "news/24867.html",
+      "title": "24867 一詮七"
     }
   ]
 }
