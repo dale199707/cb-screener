@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-20T01:05:47+08:00",
+  "generated_at": "2026-10-20T23:15:39+08:00",
   "source_date": "2026-10-19",
   "results": [
     {
@@ -19,6 +19,12 @@
       "name": "柏騰一",
       "url_path": "news/35181.html",
       "title": "35181 柏騰一"
+    },
+    {
+      "code": "65331",
+      "name": "晶心科一",
+      "url_path": "news/65331.html",
+      "title": "65331 晶心科一"
     },
     {
       "code": "31494",
