@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-06T02:11:41+08:00",
+  "generated_at": "2026-11-09T00:45:18+08:00",
   "source_date": "2026-11-05",
   "results": [
     {
@@ -61,12 +61,6 @@
       "name": "中砂二",
       "url_path": "news/15602.html",
       "title": "15602 中砂二"
-    },
-    {
-      "code": "82103",
-      "name": "勤誠三",
-      "url_path": "news/82103.html",
-      "title": "82103 勤誠三"
     }
   ]
 }
