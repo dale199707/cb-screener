@@ -1,36 +1,30 @@
 {
-  "generated_at": "2026-11-13T02:30:37+08:00",
-  "source_date": "2026-11-12",
+  "generated_at": "2026-11-16T01:20:23+08:00",
+  "source_date": "2026-11-13",
   "results": [
     {
-      "code": "37171",
-      "name": "聯嘉投控一",
-      "url_path": "news/37171.html",
-      "title": "37171 聯嘉投控一"
+      "code": "30166",
+      "name": "嘉晶六",
+      "url_path": "news/30166.html",
+      "title": "30166 嘉晶六"
     },
     {
-      "code": "30337",
-      "name": "威健七",
-      "url_path": "news/30337.html",
-      "title": "30337 威健七"
+      "code": "11011",
+      "name": "台泥一永",
+      "url_path": "news/11011.html",
+      "title": "11011 台泥一永"
     },
     {
-      "code": "33247",
-      "name": "雙鴻七",
-      "url_path": "news/33247.html",
-      "title": "33247 雙鴻七"
+      "code": "23031",
+      "name": "聯電一",
+      "url_path": "news/23031.html",
+      "title": "23031 聯電一"
     },
     {
-      "code": "15602",
-      "name": "中砂二",
-      "url_path": "news/15602.html",
-      "title": "15602 中砂二"
-    },
-    {
-      "code": "36805",
-      "name": "家登五",
-      "url_path": "news/36805.html",
-      "title": "36805 家登五"
+      "code": "55363",
+      "name": "聖暉三",
+      "url_path": "news/55363.html",
+      "title": "55363 聖暉三"
     }
   ]
 }
