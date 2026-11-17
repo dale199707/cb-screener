@@ -1,48 +1,30 @@
 {
-  "generated_at": "2026-11-17T04:38:01+08:00",
-  "source_date": "2026-11-16",
+  "generated_at": "2026-11-18T03:16:33+08:00",
+  "source_date": "2026-11-17",
   "results": [
     {
-      "code": "37171",
-      "name": "聯嘉投控一",
-      "url_path": "news/37171.html",
-      "title": "37171 聯嘉投控一"
+      "code": "49166",
+      "name": "事欣科六",
+      "url_path": "news/49166.html",
+      "title": "49166 事欣科六"
     },
     {
-      "code": "36054",
-      "name": "宏致四",
-      "url_path": "news/36054.html",
-      "title": "36054 宏致四"
+      "code": "30166",
+      "name": "嘉晶六",
+      "url_path": "news/30166.html",
+      "title": "30166 嘉晶六"
     },
     {
-      "code": "65152",
-      "name": "穎崴二",
-      "url_path": "news/65152.html",
-      "title": "65152 穎崴二"
+      "code": "35267",
+      "name": "凡甲七",
+      "url_path": "news/35267.html",
+      "title": "35267 凡甲七"
     },
     {
-      "code": "15602",
-      "name": "中砂二",
-      "url_path": "news/15602.html",
-      "title": "15602 中砂二"
-    },
-    {
-      "code": "36805",
-      "name": "家登五",
-      "url_path": "news/36805.html",
-      "title": "36805 家登五"
-    },
-    {
-      "code": "80213",
-      "name": "尖點三",
-      "url_path": "news/80213.html",
-      "title": "80213 尖點三"
-    },
-    {
-      "code": "35833",
-      "name": "辛耘三",
-      "url_path": "news/35833.html",
-      "title": "35833 辛耘三"
+      "code": "34913",
+      "name": "昇達科三",
+      "url_path": "news/34913.html",
+      "title": "34913 昇達科三"
     }
   ]
 }
