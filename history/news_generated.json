@@ -1,30 +1,54 @@
 {
-  "generated_at": "2026-11-19T02:57:41+08:00",
-  "source_date": "2026-11-18",
+  "generated_at": "2026-11-20T03:07:02+08:00",
+  "source_date": "2026-11-19",
   "results": [
     {
-      "code": "47223",
-      "name": "國精化三",
-      "url_path": "news/47223.html",
-      "title": "47223 國精化三"
+      "code": "99332",
+      "name": "中鼎二",
+      "url_path": "news/99332.html",
+      "title": "99332 中鼎二"
     },
     {
-      "code": "62854",
-      "name": "啟碁四",
-      "url_path": "news/62854.html",
-      "title": "62854 啟碁四"
+      "code": "37171",
+      "name": "聯嘉投控一",
+      "url_path": "news/37171.html",
+      "title": "37171 聯嘉投控一"
     },
     {
-      "code": "32609",
-      "name": "威剛九",
-      "url_path": "news/32609.html",
-      "title": "32609 威剛九"
+      "code": "76101",
+      "name": "聯友金屬一創",
+      "url_path": "news/76101.html",
+      "title": "76101 聯友金屬一創"
     },
     {
-      "code": "55363",
-      "name": "聖暉三",
-      "url_path": "news/55363.html",
-      "title": "55363 聖暉三"
+      "code": "30455",
+      "name": "台灣大五",
+      "url_path": "news/30455.html",
+      "title": "30455 台灣大五"
+    },
+    {
+      "code": "30337",
+      "name": "威健七",
+      "url_path": "news/30337.html",
+      "title": "30337 威健七"
+    },
+    {
+      "code": "33245",
+      "name": "雙鴻五",
+      "url_path": "news/33245.html",
+      "title": "33245 雙鴻五"
+    },
+    {
+      "code": "17172",
+      "name": "長興二",
+      "url_path": "news/17172.html",
+      "title": "17172 長興二"
+    },
+    {
+      "code": "33395",
+      "name": "泰谷五",
+      "url_path": "news/33395.html",
+      "title": "33395 泰谷五"
     }
   ]
 }
