@@ -1,12 +1,36 @@
 {
-  "generated_at": "2026-11-23T01:57:37+08:00",
-  "source_date": "2026-11-20",
+  "generated_at": "2026-11-24T06:08:54+08:00",
+  "source_date": "2026-11-23",
   "results": [
     {
-      "code": "30166",
-      "name": "嘉晶六",
-      "url_path": "news/30166.html",
-      "title": "30166 嘉晶六"
+      "code": "82711",
+      "name": "宇瞻一",
+      "url_path": "news/82711.html",
+      "title": "82711 宇瞻一"
+    },
+    {
+      "code": "36806",
+      "name": "家登六",
+      "url_path": "news/36806.html",
+      "title": "36806 家登六"
+    },
+    {
+      "code": "36805",
+      "name": "家登五",
+      "url_path": "news/36805.html",
+      "title": "36805 家登五"
+    },
+    {
+      "code": "30062",
+      "name": "晶豪科二",
+      "url_path": "news/30062.html",
+      "title": "30062 晶豪科二"
+    },
+    {
+      "code": "82993",
+      "name": "群聯三",
+      "url_path": "news/82993.html",
+      "title": "82993 群聯三"
     }
   ]
 }
